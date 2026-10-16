@@ -22,21 +22,39 @@ import {
   Sparkles,
   HelpCircle,
   Users,
-  Play
+  Play,
+  Flame,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
+export function getAppBaseUrl(): string {
+  if (typeof window === 'undefined') return 'https://flipquiz.app/';
+  let path = window.location.pathname;
+  if (path.endsWith('.html')) {
+    path = path.substring(0, path.lastIndexOf('/') + 1);
+  } else if (!path.endsWith('/')) {
+    path = path + '/';
+  }
+  return `${window.location.origin}${path}`;
+}
+
 export default function App() {
-  // View mode for testing: Teacher Monitor (LIM) vs Student Mobile
+  // View mode: Teacher Monitor (LIM) vs Student Mobile
   const [viewRole, setViewRole] = useState<'teacher' | 'student'>('teacher');
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState<boolean>(false);
+  const [isFirebaseOnline, setIsFirebaseOnline] = useState<boolean>(false);
 
-  // App URL for QR codes
-  const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://flipquiz.app';
+  // App Base URL for QR codes that preserves repository path (e.g. /FlipQuix/)
+  const appUrl = getAppBaseUrl();
 
   // Current student session (if playing on student view)
   const [myPlayerId, setMyPlayerId] = useState<string>('player-me');
   const [myPlayer, setMyPlayer] = useState<Player | null>(null);
+
+  // Room PIN from URL if scanned via QR code
+  const [initialPin, setInitialPin] = useState<string>('FLIP-101');
 
   // Core Room State
   const [roomState, setRoomState] = useState<RoomState>({
@@ -103,34 +121,80 @@ export default function App() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const botAnswerTimeouts = useRef<NodeJS.Timeout[]>([]);
 
+  // Check URL query parameters (e.g. ?pin=FLIP-101 from QR code)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const pinParam = searchParams.get('pin');
+      const roleParam = searchParams.get('role');
+
+      if (pinParam) {
+        setInitialPin(pinParam.toUpperCase());
+        setViewRole('student');
+      } else if (roleParam === 'student') {
+        setViewRole('student');
+      }
+    } catch (e) {
+      console.warn('URL parsing note:', e);
+    }
+  }, []);
+
   // Real-time synchronization subscription on mount
   useEffect(() => {
+    // 1. Restore local player if saved
     try {
       const saved = localStorage.getItem('flipquiz_my_player');
       if (saved) {
         const parsed: Player = JSON.parse(saved);
         setMyPlayer(parsed);
         setMyPlayerId(parsed.id);
+        // Ensure player is represented in local roomState
+        setRoomState((prev) => ({
+          ...prev,
+          players: {
+            ...prev.players,
+            [parsed.id]: parsed
+          }
+        }));
       }
     } catch (e) {
       console.warn('Could not read saved player from storage:', e);
     }
 
+    // 2. Listen to Firebase connection state
+    const unsubConn = firebaseSync.listenToConnection((online) => {
+      setIsFirebaseOnline(online);
+    });
+
+    // 3. Initialize room in Firebase RTDB and start listening
+    firebaseSync.initRoom(roomState).then((state) => {
+      setRoomState(state);
+    });
+
+    const unsubFirebase = firebaseSync.listenToRoom(roomState.roomCode, (firebaseState) => {
+      setRoomState((prev) => {
+        // Preserve local student player if present
+        let mergedPlayers = { ...firebaseState.players };
+        if (myPlayer && !mergedPlayers[myPlayer.id]) {
+          mergedPlayers[myPlayer.id] = myPlayer;
+        }
+        return {
+          ...firebaseState,
+          players: mergedPlayers
+        };
+      });
+    });
+
+    // 4. Same-tab BroadcastChannel sync for multi-tab
     const unsubApi = api.subscribeToRoom((serverState) => {
       setRoomState(serverState);
     });
 
-    const unsubFirebase = firebaseSync.listenToRoom(roomState.roomCode, (firebaseState) => {
-      setRoomState(firebaseState);
-    });
-
-    api.getRoom().then((data) => {
-      if (data) setRoomState(data);
-    });
-
     return () => {
-      unsubApi();
+      unsubConn();
       unsubFirebase();
+      unsubApi();
     };
   }, []);
 
@@ -158,32 +222,42 @@ export default function App() {
           api.broadcastLocal(updated);
           return updated;
         });
+
+        // Sync with Firebase
+        firebaseSync.setPhase(
+          roomState.roomCode,
+          'question_active',
+          roomState.currentQuestionIndex,
+          duration
+        );
       }, 3200);
 
       return () => clearTimeout(introTimer);
     }
-  }, [roomState.phase, roomState.currentQuestionIndex, roomState.questions]);
+  }, [roomState.phase, roomState.currentQuestionIndex, roomState.questions, roomState.roomCode]);
 
-  // Handle countdown during question_active
+  // Handle countdown & simulated bot answers during question_active (only executed on Teacher screen)
   useEffect(() => {
     if (roomState.phase === 'question_active') {
       const currentQ = roomState.questions[roomState.currentQuestionIndex];
       const duration = (currentQ?.timeLimit || 25) * 1000;
 
-      // Simulate bot answers during active question
+      // Simulate bot answers only if on teacher screen
       clearBotTimeouts();
-      const simulatedPlayers = Object.values(roomState.players).filter((p) => p.isSimulated);
+      if (viewRole === 'teacher') {
+        const simulatedPlayers = Object.values(roomState.players).filter((p) => p.isSimulated);
 
-      simulatedPlayers.forEach((bot) => {
-        const randomDelay = Math.random() * (duration * 0.55) + 1200;
-        const willBeCorrect = Math.random() > 0.3; // 70% chance correct
+        simulatedPlayers.forEach((bot) => {
+          const randomDelay = Math.random() * (duration * 0.55) + 1200;
+          const willBeCorrect = Math.random() > 0.3; // 70% chance correct
 
-        const timeout = setTimeout(() => {
-          registerAnswer(bot.id, bot.name, willBeCorrect, randomDelay / 1000);
-        }, randomDelay);
+          const timeout = setTimeout(() => {
+            registerAnswer(bot.id, bot.name, willBeCorrect, randomDelay / 1000);
+          }, randomDelay);
 
-        botAnswerTimeouts.current.push(timeout);
-      });
+          botAnswerTimeouts.current.push(timeout);
+        });
+      }
 
       // End of question timer
       timerRef.current = setTimeout(() => {
@@ -195,7 +269,7 @@ export default function App() {
         clearBotTimeouts();
       };
     }
-  }, [roomState.phase, roomState.currentQuestionIndex]);
+  }, [roomState.phase, roomState.currentQuestionIndex, viewRole]);
 
   const clearBotTimeouts = () => {
     botAnswerTimeouts.current.forEach((t) => clearTimeout(t));
@@ -206,10 +280,11 @@ export default function App() {
     if (timerRef.current) clearTimeout(timerRef.current);
     clearBotTimeouts();
 
+    const currentQ = roomState.questions[roomState.currentQuestionIndex];
+    const nextPhase: GamePhase =
+      currentQ && currentQ.type === 'draw_vote' ? 'draw_gallery' : 'question_results';
+
     setRoomState((prev) => {
-      const currentQ = prev.questions[prev.currentQuestionIndex];
-      const nextPhase: GamePhase =
-        currentQ && currentQ.type === 'draw_vote' ? 'draw_gallery' : 'question_results';
       const updated: RoomState = {
         ...prev,
         phase: nextPhase
@@ -218,6 +293,7 @@ export default function App() {
       return updated;
     });
 
+    firebaseSync.setPhase(roomState.roomCode, nextPhase);
     api.endTimerNow();
   };
 
@@ -275,20 +351,24 @@ export default function App() {
         [playerId]: submission
       };
 
-      // Update player score and streak
-      const existingPlayer = prev.players[playerId];
-      let updatedPlayers = prev.players;
+      // Always guarantee player is included in players map
+      const existingPlayer = prev.players[playerId] || {
+        id: playerId,
+        name: playerName,
+        avatar: '🚀',
+        score: 0,
+        streak: 0,
+        isSimulated: false
+      };
 
-      if (existingPlayer) {
-        updatedPlayers = {
-          ...prev.players,
-          [playerId]: {
-            ...existingPlayer,
-            score: existingPlayer.score + pointsAwarded,
-            streak: isCorrect ? existingPlayer.streak + 1 : 0
-          }
-        };
-      }
+      const updatedPlayers = {
+        ...prev.players,
+        [playerId]: {
+          ...existingPlayer,
+          score: existingPlayer.score + pointsAwarded,
+          streak: isCorrect ? existingPlayer.streak + 1 : 0
+        }
+      };
 
       const updatedState: RoomState = {
         ...prev,
@@ -297,6 +377,15 @@ export default function App() {
       };
 
       api.broadcastLocal(updatedState);
+
+      // Push answer to Firebase Realtime Database
+      firebaseSync.submitAnswer(
+        prev.roomCode,
+        submission,
+        pointsAwarded,
+        isCorrect
+      );
+
       return updatedState;
     });
   };
@@ -331,6 +420,8 @@ export default function App() {
       return updated;
     });
 
+    // Write to Firebase
+    firebaseSync.joinPlayer(pin, newPlayer);
     api.join(name, avatar, pin);
   };
 
@@ -344,6 +435,8 @@ export default function App() {
       api.broadcastLocal(updated);
       return updated;
     });
+
+    firebaseSync.submitQuestion(roomState.roomCode, question);
     api.submitQuestion(question);
     sound.playCorrect();
   };
@@ -352,10 +445,11 @@ export default function App() {
   const handleSubmitAnswer = (isCorrect: boolean, payload?: any) => {
     const player = activeStudent || {
       id: myPlayerId,
-      name: 'Studente',
-      avatar: '🚀',
+      name: myPlayer?.name || 'Studente',
+      avatar: myPlayer?.avatar || '🚀',
       score: 0,
-      streak: 0
+      streak: 0,
+      isSimulated: false
     };
 
     const timeSpent =
@@ -374,23 +468,26 @@ export default function App() {
     const player = activeStudent || myPlayer;
     if (!player) return;
 
+    const drawing: DrawingSubmission = {
+      playerId: player.id,
+      playerName: player.name,
+      dataUrl,
+      votes: []
+    };
+
     setRoomState((prev) => {
       const updated: RoomState = {
         ...prev,
         drawingsThisTurn: {
           ...prev.drawingsThisTurn,
-          [player.id]: {
-            playerId: player.id,
-            playerName: player.name,
-            dataUrl,
-            votes: []
-          }
+          [player.id]: drawing
         }
       };
       api.broadcastLocal(updated);
       return updated;
     });
 
+    firebaseSync.saveDrawing(roomState.roomCode, drawing);
     api.saveDrawing(player.id, player.name, dataUrl);
   };
 
@@ -435,12 +532,15 @@ export default function App() {
       return updated;
     });
 
+    firebaseSync.voteDrawing(roomState.roomCode, player.id, targetPlayerId);
     api.voteDrawing(player.id, targetPlayerId);
   };
 
   // Teacher starting quiz
   const handleStartGame = () => {
     if (roomState.questions.length === 0) return;
+    const duration = roomState.questions[0]?.timeLimit || 25;
+
     setRoomState((prev) => {
       const updated: RoomState = {
         ...prev,
@@ -452,6 +552,8 @@ export default function App() {
       api.broadcastLocal(updated);
       return updated;
     });
+
+    firebaseSync.setPhase(roomState.roomCode, 'question_intro', 0, duration);
     api.startGame();
   };
 
@@ -466,9 +568,13 @@ export default function App() {
         api.broadcastLocal(updated);
         return updated;
       });
+      firebaseSync.setPhase(roomState.roomCode, 'leaderboard');
     } else if (roomState.phase === 'leaderboard') {
       const nextIdx = roomState.currentQuestionIndex + 1;
       if (nextIdx < roomState.questions.length) {
+        const nextQ = roomState.questions[nextIdx];
+        const duration = nextQ?.timeLimit || 25;
+
         setRoomState((prev) => {
           const updated: RoomState = {
             ...prev,
@@ -480,6 +586,7 @@ export default function App() {
           api.broadcastLocal(updated);
           return updated;
         });
+        firebaseSync.setPhase(roomState.roomCode, 'question_intro', nextIdx, duration);
       } else {
         setRoomState((prev) => {
           const updated: RoomState = {
@@ -489,6 +596,7 @@ export default function App() {
           api.broadcastLocal(updated);
           return updated;
         });
+        firebaseSync.setPhase(roomState.roomCode, 'podium');
       }
     }
     api.nextStep();
@@ -501,12 +609,14 @@ export default function App() {
     timeLimit: number
   ) => {
     setRoomState((prev) => {
+      const updatedQuestions = prev.questions.map((q) =>
+        q.id === qId ? { ...q, points, timeLimit } : q
+      );
       const updated: RoomState = {
         ...prev,
-        questions: prev.questions.map((q) =>
-          q.id === qId ? { ...q, points, timeLimit } : q
-        )
+        questions: updatedQuestions
       };
+      firebaseSync.pushRoomState(updated);
       api.broadcastLocal(updated);
       return updated;
     });
@@ -515,10 +625,12 @@ export default function App() {
   // Teacher deleting question
   const handleDeleteQuestion = (qId: string) => {
     setRoomState((prev) => {
+      const updatedQuestions = prev.questions.filter((q) => q.id !== qId);
       const updated: RoomState = {
         ...prev,
-        questions: prev.questions.filter((q) => q.id !== qId)
+        questions: updatedQuestions
       };
+      firebaseSync.pushRoomState(updated);
       api.broadcastLocal(updated);
       return updated;
     });
@@ -552,6 +664,7 @@ export default function App() {
           ...newBots
         }
       };
+      firebaseSync.pushRoomState(updated);
       api.broadcastLocal(updated);
       return updated;
     });
@@ -586,6 +699,7 @@ export default function App() {
       api.broadcastLocal(updated);
       return updated;
     });
+    firebaseSync.resetRoom(roomState.roomCode);
     api.resetGame();
   };
 
@@ -616,7 +730,7 @@ export default function App() {
           <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-2xl border border-slate-800">
             <button
               onClick={() => setViewRole('teacher')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer ${
                 viewRole === 'teacher'
                   ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -628,7 +742,7 @@ export default function App() {
 
             <button
               onClick={() => setViewRole('student')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer ${
                 viewRole === 'student'
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -643,16 +757,26 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsFirebaseModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl text-xs font-bold text-amber-300 shadow-sm transition-colors cursor-pointer"
-              title="Clicca per testare la connessione a Firebase (gioco-multi-utente)"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer border ${
+                isFirebaseOnline
+                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30 text-amber-300'
+              }`}
+              title="Stato del database Firebase (gioco-multi-utente). Clicca per verificare la connessione"
             >
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span>Firebase RTDB</span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isFirebaseOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              <span>
+                {isFirebaseOnline ? 'Firebase RTDB: Online' : 'Firebase RTDB: Connessione...'}
+              </span>
             </button>
 
             <button
               onClick={() => setIsGuideOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white flex items-center gap-1.5 transition-colors shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
             >
               <BookOpen className="w-3.5 h-3.5" />
               Guida & Architettura
@@ -680,6 +804,7 @@ export default function App() {
           <StudentDevice
             roomState={roomState}
             myPlayer={activeStudent}
+            initialPin={initialPin}
             onJoinRoom={handleJoinRoom}
             onSubmitQuestion={handleSubmitQuestion}
             onSubmitAnswer={handleSubmitAnswer}

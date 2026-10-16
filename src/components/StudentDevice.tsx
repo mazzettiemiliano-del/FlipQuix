@@ -27,6 +27,7 @@ import {
 interface StudentDeviceProps {
   roomState: RoomState;
   myPlayer: Player | null;
+  initialPin?: string;
   onJoinRoom: (name: string, avatar: string, pin: string) => void;
   onSubmitQuestion: (question: Question) => void;
   onSubmitAnswer: (isCorrect: boolean, payload?: any) => void;
@@ -40,6 +41,7 @@ const AVATARS = ['🚀', '🦊', '⚡', '🦁', '🐼', '🎨', '🌟', '🎯', 
 export const StudentDevice: React.FC<StudentDeviceProps> = ({
   roomState,
   myPlayer,
+  initialPin,
   onJoinRoom,
   onSubmitQuestion,
   onSubmitAnswer,
@@ -50,10 +52,14 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
   // Join form state
   const [name, setName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
-  const [pin, setPin] = useState(roomState.roomCode);
+  const [pin, setPin] = useState(initialPin || roomState.roomCode);
   const [activeTab, setActiveTab] = useState<'play' | 'create'>('create');
   const [hasCreatedQuestion, setHasCreatedQuestion] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number>(25);
+
+  useEffect(() => {
+    if (initialPin) setPin(initialPin);
+  }, [initialPin]);
 
   const activePlayer = (myPlayer && roomState.players[myPlayer.id]) || myPlayer;
   const currentQ = roomState.questions[roomState.currentQuestionIndex];
@@ -179,9 +185,22 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
 
           <button
             type="submit"
-            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-base shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-98"
+            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-base shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-98 cursor-pointer"
           >
             Partecipa alla Sfida!
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const testNames = ['Matteo B.', 'Sofia L.', 'Lorenzo T.', 'Chiara M.', 'Alessandro G.'];
+              const randomName = testNames[Math.floor(Math.random() * testNames.length)];
+              onJoinRoom(randomName, selectedAvatar, pin.trim() || 'FLIP-101');
+            }}
+            className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-750 text-indigo-300 border border-slate-700 hover:border-indigo-500/40 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            Entra rapido come studente di prova (1-Click)
           </button>
         </form>
       </div>

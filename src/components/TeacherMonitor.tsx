@@ -27,7 +27,9 @@ import {
   Trash2,
   RotateCcw,
   Zap,
-  Star
+  Star,
+  Copy,
+  Check
 } from 'lucide-react';
 
 interface TeacherMonitorProps {
@@ -59,6 +61,7 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
   const [selectedConfigQId, setSelectedConfigQId] = useState<string | null>(null);
   const [editPoints, setEditPoints] = useState<number>(50);
   const [editTime, setEditTime] = useState<number>(25);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const playersList = Object.values(roomState.players);
   const currentQ = roomState.questions[roomState.currentQuestionIndex];
@@ -166,11 +169,42 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
 
               <QRCodeDisplay value={`${appUrl}?pin=${roomState.roomCode}`} size={220} />
 
-              <div className="mt-6 w-full p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-400">Codice Stanza:</span>
+              <div className="mt-5 w-full p-3.5 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400">Codice Stanza (PIN):</span>
                 <span className="text-2xl font-black text-amber-300 font-mono tracking-wider">
                   {roomState.roomCode}
                 </span>
+              </div>
+
+              {/* Direct join link for non-camera devices */}
+              <div className="mt-3 w-full p-2.5 bg-slate-950/80 rounded-xl border border-slate-800/80 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-mono text-slate-300 truncate max-w-[190px]">
+                  {`${appUrl}?pin=${roomState.roomCode}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(`${appUrl}?pin=${roomState.roomCode}`);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2000);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                  title="Copia link per gli studenti"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-3 h-3" />
+                      Copiato!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      Copia Link
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Bot Simulation for instant testing */}
