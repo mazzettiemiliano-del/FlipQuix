@@ -11,6 +11,7 @@ import { INITIAL_QUESTIONS } from './data/initialQuestions';
 import { TeacherMonitor } from './components/TeacherMonitor';
 import { StudentDevice } from './components/StudentDevice';
 import { ArchitectureGuideModal } from './components/ArchitectureGuideModal';
+import { FirebaseDiagnosticModal } from './components/FirebaseDiagnosticModal';
 import { sound } from './utils/audio';
 import { api } from './services/api';
 import { firebaseSync } from './services/firebaseSync';
@@ -28,6 +29,7 @@ export default function App() {
   // View mode for testing: Teacher Monitor (LIM) vs Student Mobile
   const [viewRole, setViewRole] = useState<'teacher' | 'student'>('teacher');
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState<boolean>(false);
 
   // App URL for QR codes
   const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://flipquiz.app';
@@ -639,13 +641,14 @@ export default function App() {
 
           {/* Firebase Connection & Guide Buttons */}
           <div className="flex items-center gap-2">
-            <div
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/15 border border-amber-500/30 rounded-xl text-xs font-bold text-amber-300 shadow-sm"
-              title="Firebase sincronizzato in tempo reale (gioco-multi-utente)"
+            <button
+              onClick={() => setIsFirebaseModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl text-xs font-bold text-amber-300 shadow-sm transition-colors cursor-pointer"
+              title="Clicca per testare la connessione a Firebase (gioco-multi-utente)"
             >
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
               <span>Firebase RTDB</span>
-            </div>
+            </button>
 
             <button
               onClick={() => setIsGuideOpen(true)}
@@ -691,6 +694,12 @@ export default function App() {
       <ArchitectureGuideModal
         isOpen={isGuideOpen}
         onClose={() => setIsGuideOpen(false)}
+      />
+
+      {/* Firebase Live Diagnostic Modal */}
+      <FirebaseDiagnosticModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
       />
     </div>
   );

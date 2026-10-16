@@ -1,28 +1,49 @@
-import { ref, onValue, set, update, get } from 'firebase/database';
+import { ref, onValue, set, get } from 'firebase/database';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 import { rtdb, db, auth } from './firebase';
 import { RoomState } from '../types/quiz';
 
+export interface FirebaseDiagnosticResult {
+  initialized: boolean;
+  rtdbConnected: boolean;
+  writeSuccess: boolean;
+  authStatus: 'authenticated' | 'anonymous' | 'none';
+  latencyMs: number;
+  errorMessage?: string;
+  projectId: string;
+  databaseUrl: string;
+}
+
 let isFirebaseConnected = false;
 let isAuthReady = false;
+let authUid: string | null = null;
 
-// Attempt anonymous authentication for Firebase if enabled
+// Listen to native Firebase RTDB connection state
 if (typeof window !== 'undefined') {
+  try {
+    const connectedRef = ref(rtdb, '.info/connected');
+    onValue(connectedRef, (snap) => {
+      isFirebaseConnected = !!snap.val();
+      console.log('Firebase .info/connected:', isFirebaseConnected);
+    });
+  } catch (e) {
+    console.warn('Could not attach .info/connected listener:', e);
+  }
+
   onAuthStateChanged(auth, (user) => {
     if (user) {
       isAuthReady = true;
+      authUid = user.uid;
       console.log('Firebase user authenticated:', user.uid);
     }
   });
 
   signInAnonymously(auth).catch((err) => {
-    // If anonymous auth is disabled in project, it's fine, public rules might be active
     console.warn('Firebase anonymous auth note:', err.message);
   });
 }
 
-// Clean object for Firebase (no undefined, circular refs or invalid keys)
 function cleanPayload(obj: any): any {
   return JSON.parse(JSON.stringify(obj));
 }
@@ -33,7 +54,6 @@ export const firebaseSync = {
     const cleanCode = roomCode.replace(/[^a-zA-Z0-9_-]/g, '');
 
     try {
-      // 1. Try Firebase Realtime Database first (sub-millisecond speed)
       const roomRef = ref(rtdb, `rooms/${cleanCode}`);
       const unsubscribeRtdb = onValue(
         roomRef,
@@ -48,7 +68,6 @@ export const firebaseSync = {
         },
         (error) => {
           console.warn('Realtime Database listener note:', error.message);
-          // Fallback to Firestore if Realtime Database has permission restrictions
           this.listenToFirestore(cleanCode, onUpdate);
         }
       );
@@ -113,6 +132,64 @@ export const firebaseSync = {
     }
 
     return success;
+  },
+
+  // Interactive Live Diagnostic Test
+  async runDiagnostic(): Promise<FirebaseDiagnosticResult> {
+    const start = performance.now();
+    let writeSuccess = false;
+    let rtdbConnected = false;
+    let errorMessage: string | undefined = undefined;
+
+    const projectId = 'gioco-multi-utente';
+    const databaseUrl = 'https://gioco-multi-utente-default-rtdb.europe-west1.firebasedatabase.app';
+
+    try {
+      // 1. Check native connected state or read ping
+      const pingRef = ref(rtdb, 'diagnostic_ping');
+      const testTimestamp = Date.now();
+
+      await set(pingRef, {
+        timestamp: testTimestamp,
+        client: 'FlipQuiz Classroom WebApp',
+        status: 'OK'
+      });
+
+      // 2. Read it back to guarantee two-way communication
+      const snap = await get(pingRef);
+      if (snap.exists() && snap.val()?.timestamp === testTimestamp) {
+        writeSuccess = true;
+        rtdbConnected = true;
+      }
+    } catch (err: any) {
+      console.error('Firebase diagnostic error:', err);
+      errorMessage = err?.message || String(err);
+
+      // If RTDB failed due to permission rules, try Firestore as alternative
+      try {
+        const testDoc = doc(db, 'system', 'ping');
+        await setDoc(testDoc, { ping: Date.now() });
+        writeSuccess = true;
+        rtdbConnected = true;
+        errorMessage = undefined;
+      } catch (fErr: any) {
+        errorMessage = fErr?.message || errorMessage;
+      }
+    }
+
+    const end = performance.now();
+    const latencyMs = Math.round(end - start);
+
+    return {
+      initialized: true,
+      rtdbConnected: writeSuccess || isFirebaseConnected,
+      writeSuccess,
+      authStatus: auth.currentUser ? 'authenticated' : 'none',
+      latencyMs,
+      errorMessage,
+      projectId,
+      databaseUrl
+    };
   },
 
   isConnected(): boolean {
