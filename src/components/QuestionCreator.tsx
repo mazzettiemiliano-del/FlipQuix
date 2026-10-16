@@ -1,0 +1,1082 @@
+import React, { useState } from 'react';
+import {
+  Question,
+  QuestionType,
+  MultipleChoiceContent,
+  TrueFalseContent,
+  OpenShortContent,
+  FillBlanksContent,
+  MemoryMatchContent,
+  DrawVoteContent,
+  CellIdentifyContent,
+  OrderCellsContent,
+  AnagramContent,
+  PuzzleContent,
+  WordSearchContent,
+  MathChallengeContent,
+  WordBuilderContent
+} from '../types/quiz';
+import { ImagePickerModal } from './ImagePickerModal';
+import {
+  HelpCircle,
+  Clock,
+  Image as ImageIcon,
+  CheckCircle,
+  Plus,
+  Trash2,
+  Sparkles,
+  Send,
+  Eye,
+  Type,
+  Grid,
+  Palette,
+  Calculator,
+  Shuffle
+} from 'lucide-react';
+
+interface QuestionCreatorProps {
+  creatorName: string;
+  onSubmitQuestion: (question: Question) => void;
+  onCancel?: () => void;
+}
+
+const QUESTION_TYPES_INFO: {
+  type: QuestionType;
+  label: string;
+  description: string;
+  icon: any;
+  color: string;
+}[] = [
+  {
+    type: 'multiple_choice',
+    label: 'Risposta Multipla',
+    description: 'Scelta tra opzioni, 1 sola corretta con immagine facoltativa',
+    icon: HelpCircle,
+    color: 'from-blue-500 to-indigo-600'
+  },
+  {
+    type: 'true_false',
+    label: 'Vero o Falso',
+    description: 'Due sole scelte immediate (Vero/Falso)',
+    icon: CheckCircle,
+    color: 'from-emerald-500 to-teal-600'
+  },
+  {
+    type: 'open_short',
+    label: 'Risposta Aperta',
+    description: 'Breve testo da digitare (non conta maiuscole/minuscole)',
+    icon: Type,
+    color: 'from-amber-500 to-orange-600'
+  },
+  {
+    type: 'fill_blanks',
+    label: 'Risposta a Buchi',
+    description: 'Tocca una parola per evidenziarla in giallo e nasconderla',
+    icon: Sparkles,
+    color: 'from-yellow-500 to-amber-600'
+  },
+  {
+    type: 'memory_match',
+    label: 'Memory e Testo',
+    description: '4 celle con immagine e 4 con testo da associare',
+    icon: Grid,
+    color: 'from-purple-500 to-violet-600'
+  },
+  {
+    type: 'draw_vote',
+    label: 'Disegna & Votazione',
+    description: 'Canvas per disegnare la stimolazione e votazione con stelle',
+    icon: Palette,
+    color: 'from-pink-500 to-rose-600'
+  },
+  {
+    type: 'cell_identify',
+    label: 'Identifica Celle',
+    description: 'Clicca su tutte le celle che rispondono allo stimolo',
+    icon: CheckCircle,
+    color: 'from-cyan-500 to-blue-600'
+  },
+  {
+    type: 'order_cells',
+    label: 'Ordina le Celle',
+    description: '4 celle da riordinare in sequenza logica o cronologica',
+    icon: Shuffle,
+    color: 'from-teal-500 to-emerald-600'
+  },
+  {
+    type: 'anagram',
+    label: 'Anagramma',
+    description: 'Lettere mescolate da ricomporre per formare la parola',
+    icon: Type,
+    color: 'from-indigo-500 to-violet-600'
+  },
+  {
+    type: 'puzzle',
+    label: 'Puzzle',
+    description: 'Immagine scomposta in tessere da ricostruire nella griglia',
+    icon: Grid,
+    color: 'from-orange-500 to-red-600'
+  },
+  {
+    type: 'word_search',
+    label: 'Crucipuzzle',
+    description: 'Griglia di lettere con parole nascoste e caratteri casuali',
+    icon: Grid,
+    color: 'from-blue-600 to-cyan-700'
+  },
+  {
+    type: 'math_challenge',
+    label: 'Matematica',
+    description: 'Generatore calcoli (+, -, x, :) con riporti e limiti',
+    icon: Calculator,
+    color: 'from-violet-600 to-purple-700'
+  },
+  {
+    type: 'word_builder',
+    label: 'Più Parole',
+    description: '5 consonanti + 2 vocali: forma più parole possibili',
+    icon: Type,
+    color: 'from-lime-500 to-emerald-600'
+  }
+];
+
+export const QuestionCreator: React.FC<QuestionCreatorProps> = ({
+  creatorName,
+  onSubmitQuestion,
+  onCancel
+}) => {
+  const [selectedType, setSelectedType] = useState<QuestionType>('multiple_choice');
+  const [title, setTitle] = useState('');
+  const [timeLimit, setTimeLimit] = useState<number>(25);
+  const [mainImageUrl, setMainImageUrl] = useState<string>('');
+  const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
+  const [activeImagePickerTarget, setActiveImagePickerTarget] = useState<string>('main');
+
+  // --- Specific Content States ---
+  // Multiple Choice
+  const [mcOptions, setMcOptions] = useState<
+    { id: string; text: string; isCorrect: boolean }[]
+  >([
+    { id: 'opt-1', text: '', isCorrect: true },
+    { id: 'opt-2', text: '', isCorrect: false },
+    { id: 'opt-3', text: '', isCorrect: false },
+    { id: 'opt-4', text: '', isCorrect: false }
+  ]);
+
+  // True / False
+  const [tfCorrect, setTfCorrect] = useState<boolean>(true);
+
+  // Open Short
+  const [openAnswers, setOpenAnswers] = useState<string>('');
+
+  // Fill Blanks
+  const [fillSentence, setFillSentence] = useState('MARIO VA AL MARE IN VACANZA');
+  const [highlightedWord, setHighlightedWord] = useState('MARE');
+  const [distractors, setDistractors] = useState<string[]>(['MONTAGNA', 'LAGO', 'COLLINA']);
+
+  // Memory Match (4 pairs)
+  const [memoryPairs, setMemoryPairs] = useState<{ id: string; image: string; text: string }[]>([
+    { id: 'm1', image: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&auto=format&fit=crop&q=80', text: 'Napoleone Bonaparte' },
+    { id: 'm2', image: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=600&auto=format&fit=crop&q=80', text: 'Colosseo di Roma' },
+    { id: 'm3', image: 'https://images.unsplash.com/photo-1503177119275-0aa32b3a9368?w=600&auto=format&fit=crop&q=80', text: 'Piramidi di Giza' },
+    { id: 'm4', image: 'https://images.unsplash.com/photo-1534188753412-3e26d0d618d6?w=600&auto=format&fit=crop&q=80', text: 'Leone della Savana' }
+  ]);
+
+  // Draw Vote
+  const [drawPrompt, setDrawPrompt] = useState('Disegna un gatto con gli occhiali da sole');
+
+  // Cell Identify
+  const [cellStimulus, setCellStimulus] = useState('NAPOLEONE');
+  const [identifyCells, setIdentifyCells] = useState<
+    { id: string; text: string; isMatch: boolean }[]
+  >([
+    { id: 'c1', text: 'Bonaparte', isMatch: true },
+    { id: 'c2', text: 'Cavallo Bianco', isMatch: true },
+    { id: 'c3', text: 'Waterloo', isMatch: true },
+    { id: 'c4', text: 'Banana', isMatch: false },
+    { id: 'c5', text: 'Incoronazione', isMatch: true },
+    { id: 'c6', text: 'Torre Eiffel', isMatch: false }
+  ]);
+
+  // Order Cells
+  const [orderItems, setOrderItems] = useState<{ id: string; text: string }[]>([
+    { id: 'ord-1', text: 'Primavera' },
+    { id: 'ord-2', text: 'Estate' },
+    { id: 'ord-3', text: 'Autunno' },
+    { id: 'ord-4', text: 'Inverno' }
+  ]);
+
+  // Anagram
+  const [anagramWord, setAnagramWord] = useState('PLANISFERO');
+
+  // Puzzle
+  const [puzzleImage, setPuzzleImage] = useState(
+    'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=600&auto=format&fit=crop&q=80'
+  );
+  const [puzzleGridSize, setPuzzleGridSize] = useState<2 | 3>(2);
+
+  // Word Search
+  const [wordSearchList, setWordSearchList] = useState<string>('ROMA, SOLE, MARE, LUNA');
+
+  // Math Challenge
+  const [mathOps, setMathOps] = useState<('+' | '-' | '*' | '/')[]>(['+', '-']);
+  const [mathCount, setMathCount] = useState<1 | 2 | 3 | 4>(2);
+  const [mathRange, setMathRange] = useState<10 | 100 | 1000>(100);
+  const [mathCarry, setMathCarry] = useState(false);
+
+  // Word Builder
+  const [builderConsonants, setBuilderConsonants] = useState<string[]>(['R', 'S', 'T', 'M', 'P']);
+  const [builderVowels, setBuilderVowels] = useState<string[]>(['A', 'E']);
+
+  const openImagePicker = (target: string) => {
+    setActiveImagePickerTarget(target);
+    setIsImagePickerOpen(true);
+  };
+
+  const handleImagePicked = (url: string) => {
+    if (activeImagePickerTarget === 'main') {
+      setMainImageUrl(url);
+    } else if (activeImagePickerTarget === 'puzzle') {
+      setPuzzleImage(url);
+    } else if (activeImagePickerTarget.startsWith('memory-')) {
+      const idx = parseInt(activeImagePickerTarget.replace('memory-', ''), 10);
+      const next = [...memoryPairs];
+      next[idx].image = url;
+      setMemoryPairs(next);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      alert('Inserisci il titolo o testo della domanda!');
+      return;
+    }
+
+    let content: any = {};
+
+    if (selectedType === 'multiple_choice') {
+      if (mcOptions.some((o) => !o.text.trim())) {
+        alert('Compila il testo di tutte le opzioni!');
+        return;
+      }
+      content = { options: mcOptions } as MultipleChoiceContent;
+    } else if (selectedType === 'true_false') {
+      content = { isTrueCorrect: tfCorrect } as TrueFalseContent;
+    } else if (selectedType === 'open_short') {
+      const answers = openAnswers
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (answers.length === 0) {
+        alert('Inserisci almeno una risposta valida!');
+        return;
+      }
+      content = { acceptedAnswers: answers } as OpenShortContent;
+    } else if (selectedType === 'fill_blanks') {
+      content = {
+        originalText: fillSentence,
+        blankWord: highlightedWord,
+        distractors
+      } as FillBlanksContent;
+    } else if (selectedType === 'memory_match') {
+      content = { pairs: memoryPairs } as MemoryMatchContent;
+    } else if (selectedType === 'draw_vote') {
+      content = { prompt: drawPrompt || title } as DrawVoteContent;
+    } else if (selectedType === 'cell_identify') {
+      content = { stimulus: cellStimulus, cells: identifyCells } as CellIdentifyContent;
+    } else if (selectedType === 'order_cells') {
+      content = { correctOrder: orderItems } as OrderCellsContent;
+    } else if (selectedType === 'anagram') {
+      content = { phraseOrWord: anagramWord } as AnagramContent;
+    } else if (selectedType === 'puzzle') {
+      content = { imageUrl: puzzleImage, gridSize: puzzleGridSize } as PuzzleContent;
+    } else if (selectedType === 'word_search') {
+      const words = wordSearchList
+        .split(',')
+        .map((w) => w.trim().toUpperCase())
+        .filter(Boolean);
+      content = { words, gridSize: 8 } as WordSearchContent;
+    } else if (selectedType === 'math_challenge') {
+      content = {
+        operators: mathOps,
+        numberOfOperations: mathCount,
+        digitRange: mathRange,
+        allowCarryOrRemainder: mathCarry
+      } as MathChallengeContent;
+    } else if (selectedType === 'word_builder') {
+      content = {
+        consonants: builderConsonants,
+        vowels: builderVowels
+      } as WordBuilderContent;
+    }
+
+    const newQuestion: Question = {
+      id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: selectedType,
+      title: title.trim(),
+      creatorName: creatorName || 'Studente',
+      timeLimit,
+      points: 50,
+      imageUrl: mainImageUrl || undefined,
+      content,
+      createdAt: Date.now(),
+      approved: true
+    };
+
+    onSubmitQuestion(newQuestion);
+  };
+
+  return (
+    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl space-y-8 animate-fade-in text-slate-100">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-800 gap-4">
+        <div>
+          <span className="text-xs font-black uppercase tracking-wider text-indigo-400">
+            Flipped Classroom • Crea la tua domanda
+          </span>
+          <h2 className="text-2xl md:text-3xl font-black text-white mt-1">
+            Editor Domanda FlipQuiz
+          </h2>
+          <p className="text-xs text-slate-400">
+            Creatore: <strong className="text-indigo-300 font-bold">{creatorName}</strong> — La tua domanda verrà proiettata sulla LIM della classe!
+          </p>
+        </div>
+
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-colors self-start sm:self-auto"
+          >
+            Annulla
+          </button>
+        )}
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-8">
+        {/* 1. Pick Question Type */}
+        <div className="space-y-3">
+          <label className="text-sm font-bold text-slate-300 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-black text-xs flex items-center justify-center">
+              1
+            </span>
+            Scegli la tipologia di gioco:
+          </label>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+            {QUESTION_TYPES_INFO.map((item) => {
+              const isSelected = selectedType === item.type;
+              const Icon = item.icon;
+
+              return (
+                <button
+                  key={item.type}
+                  type="button"
+                  onClick={() => setSelectedType(item.type)}
+                  className={`p-3 rounded-2xl border-2 text-left transition-all flex flex-col justify-between min-h-[90px] ${
+                    isSelected
+                      ? 'border-indigo-400 bg-indigo-500/20 ring-4 ring-indigo-500/30 scale-102 shadow-lg'
+                      : 'border-slate-800 bg-slate-850 hover:border-slate-700 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div
+                      className={`p-2 rounded-xl text-white bg-gradient-to-br ${item.color} shadow-sm`}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    {isSelected && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-400" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs text-white mt-2 leading-tight">
+                      {item.label}
+                    </h4>
+                    <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">
+                      {item.description}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 2. Title & Timing Settings */}
+        <div className="space-y-4 bg-slate-850 p-6 rounded-2xl border border-slate-800">
+          <label className="text-sm font-bold text-slate-300 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-black text-xs flex items-center justify-center">
+              2
+            </span>
+            Titolo o Testo della Domanda:
+          </label>
+
+          <input
+            type="text"
+            required
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Es. Qual è la capitale dell'Italia? oppure Risolvi l'indovinello..."
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-base text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            {/* Time selection */}
+            <div>
+              <span className="text-xs font-bold text-slate-400 block mb-2 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                Tempo a disposizione:
+              </span>
+              <div className="flex gap-2">
+                {[10, 25, 40, 60].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTimeLimit(t)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
+                      timeLimit === t
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    {t}s {t === 25 ? '★' : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Optional Image Support */}
+            <div>
+              <span className="text-xs font-bold text-slate-400 block mb-2 flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+                Immagine di supporto (Google Docs style):
+              </span>
+              <div className="flex gap-2 items-center">
+                <button
+                  type="button"
+                  onClick={() => openImagePicker('main')}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center gap-2 transition-colors"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  {mainImageUrl ? 'Cambia Immagine' : 'Cerca dal Web...'}
+                </button>
+                {mainImageUrl && (
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={mainImageUrl}
+                      alt="Anteprima"
+                      className="w-9 h-9 object-cover rounded-lg border border-slate-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMainImageUrl('')}
+                      className="text-xs text-rose-400 hover:underline"
+                    >
+                      Rimuovi
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Type-Specific Details */}
+        <div className="space-y-4 bg-slate-850 p-6 rounded-2xl border border-slate-800">
+          <label className="text-sm font-bold text-slate-300 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-black text-xs flex items-center justify-center">
+              3
+            </span>
+            Configurazione Specifica Gioco:
+          </label>
+
+          {/* Type 1: Multiple Choice */}
+          {selectedType === 'multiple_choice' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Inserisci le opzioni e seleziona il cerchio per indicare l'UNICA risposta corretta:
+              </p>
+              {mcOptions.map((opt, idx) => (
+                <div key={opt.id} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = mcOptions.map((o) => ({
+                        ...o,
+                        isCorrect: o.id === opt.id
+                      }));
+                      setMcOptions(next);
+                    }}
+                    className={`p-2.5 rounded-xl transition-all ${
+                      opt.isCorrect
+                        ? 'bg-emerald-500 text-white font-bold ring-2 ring-emerald-300 shadow-md'
+                        : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                    }`}
+                    title="Segna come corretta"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                  </button>
+
+                  <input
+                    type="text"
+                    required
+                    value={opt.text}
+                    onChange={(e) => {
+                      const next = [...mcOptions];
+                      next[idx].text = e.target.value;
+                      setMcOptions(next);
+                    }}
+                    placeholder={`Opzione ${idx + 1} ${opt.isCorrect ? '(CORRETTA)' : ''}`}
+                    className={`flex-1 py-2.5 px-4 rounded-xl bg-slate-900 border text-sm text-white focus:outline-none ${
+                      opt.isCorrect
+                        ? 'border-emerald-500 font-bold'
+                        : 'border-slate-700'
+                    }`}
+                  />
+
+                  {mcOptions.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setMcOptions(mcOptions.filter((o) => o.id !== opt.id))}
+                      className="p-2 text-rose-400 hover:bg-rose-500/10 rounded-xl"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {mcOptions.length < 6 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMcOptions([
+                      ...mcOptions,
+                      { id: `opt-${Date.now()}`, text: '', isCorrect: false }
+                    ])
+                  }
+                  className="px-4 py-2 text-xs font-bold text-indigo-400 hover:bg-indigo-500/10 rounded-xl flex items-center gap-1.5 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Aggiungi altra opzione
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Type 2: True / False */}
+          {selectedType === 'true_false' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">Qual è la risposta esatta per questa affermazione?</p>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setTfCorrect(true)}
+                  className={`py-6 rounded-2xl font-black text-xl flex items-center justify-center gap-2 border-2 transition-all ${
+                    tfCorrect === true
+                      ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 ring-4 ring-emerald-400/30'
+                      : 'border-slate-800 bg-slate-900 text-slate-400'
+                  }`}
+                >
+                  <CheckCircle className="w-6 h-6" /> VERO
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTfCorrect(false)}
+                  className={`py-6 rounded-2xl font-black text-xl flex items-center justify-center gap-2 border-2 transition-all ${
+                    tfCorrect === false
+                      ? 'border-rose-400 bg-rose-500/20 text-rose-300 ring-4 ring-rose-400/30'
+                      : 'border-slate-800 bg-slate-900 text-slate-400'
+                  }`}
+                >
+                  <CheckCircle className="w-6 h-6" /> FALSO
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Type 3: Open Short */}
+          {selectedType === 'open_short' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Inserisci le risposte considerate valide, separate da virgola (non conta maiuscole/minuscole):
+              </p>
+              <input
+                type="text"
+                required
+                value={openAnswers}
+                onChange={(e) => setOpenAnswers(e.target.value)}
+                placeholder="Es. Roma, roma, Roma Capitale"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          )}
+
+          {/* Type 4: Fill Blanks */}
+          {selectedType === 'fill_blanks' && (
+            <div className="space-y-4">
+              <div>
+                <span className="text-xs font-bold text-slate-400 block mb-1">
+                  1. Scrivi la frase completa:
+                </span>
+                <input
+                  type="text"
+                  value={fillSentence}
+                  onChange={(e) => setFillSentence(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <span className="text-xs font-bold text-slate-400 block mb-1">
+                  2. Clicca sulla parola da evidenziare in GIALLO (diventerà il buco):
+                </span>
+                <div className="flex flex-wrap gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800">
+                  {fillSentence.split(' ').map((w, idx) => {
+                    const clean = w.replace(/[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]/g, '');
+                    const isSelected = highlightedWord.toLowerCase() === clean.toLowerCase();
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setHighlightedWord(clean)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                          isSelected
+                            ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 font-black scale-105'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        {w}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-amber-300 mt-1">
+                  Parola bucata selezionata: <strong>{highlightedWord}</strong>
+                </p>
+              </div>
+
+              <div>
+                <span className="text-xs font-bold text-slate-400 block mb-1">
+                  3. Inserisci 3 parole errate (distrattori che ingannano nel menu):
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {distractors.map((dis, idx) => (
+                    <input
+                      key={idx}
+                      type="text"
+                      required
+                      value={dis}
+                      onChange={(e) => {
+                        const next = [...distractors];
+                        next[idx] = e.target.value;
+                        setDistractors(next);
+                      }}
+                      placeholder={`Distrattore ${idx + 1}`}
+                      className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Type 5: Memory Match */}
+          {selectedType === 'memory_match' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Definisci le 4 coppie (Immagine + Testo) da abbinare:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {memoryPairs.map((pair, idx) => (
+                  <div key={pair.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center gap-3">
+                    <img
+                      src={pair.image}
+                      alt="Pair"
+                      className="w-14 h-14 object-cover rounded-lg border border-slate-700 cursor-pointer"
+                      onClick={() => openImagePicker(`memory-${idx}`)}
+                      title="Clicca per cambiare immagine"
+                    />
+                    <div className="flex-1 space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => openImagePicker(`memory-${idx}`)}
+                        className="text-[10px] text-indigo-400 hover:underline"
+                      >
+                        Cambia immagine dal web
+                      </button>
+                      <input
+                        type="text"
+                        required
+                        value={pair.text}
+                        onChange={(e) => {
+                          const next = [...memoryPairs];
+                          next[idx].text = e.target.value;
+                          setMemoryPairs(next);
+                        }}
+                        placeholder={`Nome coppia ${idx + 1}`}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Type 6: Draw Vote */}
+          {selectedType === 'draw_vote' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Stimolazione per il disegno: cosa devono disegnare i tuoi compagni?
+              </p>
+              <input
+                type="text"
+                required
+                value={drawPrompt}
+                onChange={(e) => setDrawPrompt(e.target.value)}
+                placeholder="Es. Il Colosseo di notte, Un robot che cucina la pizza..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white"
+              />
+            </div>
+          )}
+
+          {/* Type 7: Cell Identify */}
+          {selectedType === 'cell_identify' && (
+            <div className="space-y-3">
+              <div>
+                <span className="text-xs font-bold text-slate-400 block mb-1">
+                  Stimolazione (es. NAPOLEONE):
+                </span>
+                <input
+                  type="text"
+                  required
+                  value={cellStimulus}
+                  onChange={(e) => setCellStimulus(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <span className="text-xs font-bold text-slate-400 block mb-1">
+                  Celle informative (spunta quelle collegate/vere):
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {identifyCells.map((cell, idx) => (
+                    <div
+                      key={cell.id}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${
+                        cell.isMatch
+                          ? 'border-emerald-500 bg-emerald-500/10'
+                          : 'border-slate-800 bg-slate-900'
+                      }`}
+                    >
+                      <input
+                        type="text"
+                        value={cell.text}
+                        onChange={(e) => {
+                          const next = [...identifyCells];
+                          next[idx].text = e.target.value;
+                          setIdentifyCells(next);
+                        }}
+                        className="bg-transparent border-none text-xs text-white focus:outline-none flex-1"
+                      />
+                      <input
+                        type="checkbox"
+                        checked={cell.isMatch}
+                        onChange={(e) => {
+                          const next = [...identifyCells];
+                          next[idx].isMatch = e.target.checked;
+                          setIdentifyCells(next);
+                        }}
+                        className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                        title="Vero / Falso"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Type 8: Order Cells */}
+          {selectedType === 'order_cells' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Inserisci le 4 celle nell'ordine CORRETTO (verranno mescolate al giocatore):
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {orderItems.map((item, idx) => (
+                  <div key={item.id} className="flex items-center gap-2 p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                    <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-bold text-xs flex items-center justify-center">
+                      {idx + 1}°
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      value={item.text}
+                      onChange={(e) => {
+                        const next = [...orderItems];
+                        next[idx].text = e.target.value;
+                        setOrderItems(next);
+                      }}
+                      className="bg-transparent border-none text-sm text-white focus:outline-none flex-1 font-semibold"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Type 9: Anagram */}
+          {selectedType === 'anagram' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Inserisci la parola o frase segreta. Il computer creerà le tessere e le mescolerà:
+              </p>
+              <input
+                type="text"
+                required
+                value={anagramWord}
+                onChange={(e) => setAnagramWord(e.target.value.toUpperCase())}
+                placeholder="Es. PLANISFERO, DANTE, ASTRONOMIA"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-base font-black tracking-widest text-white uppercase"
+              />
+            </div>
+          )}
+
+          {/* Type 10: Puzzle */}
+          {selectedType === 'puzzle' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <img
+                  src={puzzleImage}
+                  alt="Puzzle"
+                  className="w-24 h-24 object-cover rounded-xl border border-slate-700"
+                />
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => openImagePicker('puzzle')}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-indigo-300 rounded-xl border border-indigo-500/30 text-xs font-bold flex items-center gap-2"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    Scegli Immagine Puzzle dal Web
+                  </button>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-slate-400">Tessere:</span>
+                    <button
+                      type="button"
+                      onClick={() => setPuzzleGridSize(2)}
+                      className={`px-3 py-1 rounded-lg font-bold ${
+                        puzzleGridSize === 2
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-900 text-slate-400'
+                      }`}
+                    >
+                      2x2 (4 pezzi)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPuzzleGridSize(3)}
+                      className={`px-3 py-1 rounded-lg font-bold ${
+                        puzzleGridSize === 3
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-900 text-slate-400'
+                      }`}
+                    >
+                      3x3 (9 pezzi)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Type 11: Word Search */}
+          {selectedType === 'word_search' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Inserisci le parole da nascondere nella griglia, separate da virgola (3-5 parole consigliate):
+              </p>
+              <input
+                type="text"
+                required
+                value={wordSearchList}
+                onChange={(e) => setWordSearchList(e.target.value.toUpperCase())}
+                placeholder="Es. ROMA, SOLE, MARE, LUNA"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-white uppercase"
+              />
+            </div>
+          )}
+
+          {/* Type 12: Math Challenge */}
+          {selectedType === 'math_challenge' && (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-400">
+                Configura i parametri del generatore matematico automatico:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Operators */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400">Operazioni:</span>
+                  <div className="flex gap-1">
+                    {(['+', '-', '*', '/'] as const).map((op) => {
+                      const active = mathOps.includes(op);
+                      return (
+                        <button
+                          key={op}
+                          type="button"
+                          onClick={() => {
+                            if (active && mathOps.length > 1) {
+                              setMathOps(mathOps.filter((o) => o !== op));
+                            } else if (!active) {
+                              setMathOps([...mathOps, op]);
+                            }
+                          }}
+                          className={`w-9 h-9 rounded-lg font-black text-sm ${
+                            active
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-slate-900 text-slate-500'
+                          }`}
+                        >
+                          {op === '*' ? '×' : op === '/' ? ':' : op}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Operations Count */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400">N° Esercizi:</span>
+                  <div className="flex gap-1">
+                    {([1, 2, 3, 4] as const).map((cnt) => (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => setMathCount(cnt)}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-black ${
+                          mathCount === cnt
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-900 text-slate-500'
+                        }`}
+                      >
+                        {cnt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Limit */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-400">Entro il:</span>
+                  <div className="flex gap-1">
+                    {([10, 100, 1000] as const).map((rng) => (
+                      <button
+                        key={rng}
+                        type="button"
+                        onClick={() => setMathRange(rng)}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-black ${
+                          mathRange === rng
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-900 text-slate-500'
+                        }`}
+                      >
+                        {rng}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Carry/Remainder toggle */}
+                <div className="space-y-1 flex flex-col justify-end">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={mathCarry}
+                      onChange={(e) => setMathCarry(e.target.checked)}
+                      className="w-4 h-4 accent-indigo-500"
+                    />
+                    Con riporto / resto
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Type 13: Word Builder */}
+          {selectedType === 'word_builder' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                Configura le 5 consonanti e 2 vocali con cui formare le parole:
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-400">Consonanti:</span>
+                {builderConsonants.map((c, i) => (
+                  <input
+                    key={`c-${i}`}
+                    type="text"
+                    maxLength={1}
+                    value={c}
+                    onChange={(e) => {
+                      const next = [...builderConsonants];
+                      next[i] = e.target.value.toUpperCase();
+                      setBuilderConsonants(next);
+                    }}
+                    className="w-10 h-10 text-center font-black text-lg bg-slate-900 border border-slate-700 rounded-lg text-white uppercase"
+                  />
+                ))}
+
+                <span className="text-xs font-bold text-slate-400 ml-4">Vocali:</span>
+                {builderVowels.map((v, i) => (
+                  <input
+                    key={`v-${i}`}
+                    type="text"
+                    maxLength={1}
+                    value={v}
+                    onChange={(e) => {
+                      const next = [...builderVowels];
+                      next[i] = e.target.value.toUpperCase();
+                      setBuilderVowels(next);
+                    }}
+                    className="w-10 h-10 text-center font-black text-lg bg-slate-900 border border-amber-500/50 rounded-lg text-amber-300 uppercase"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Submit Button */}
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-6 py-3 rounded-2xl bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-sm transition-colors"
+            >
+              Annulla
+            </button>
+          )}
+
+          <button
+            type="submit"
+            className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-base shadow-xl flex items-center gap-2 transition-transform active:scale-98"
+          >
+            <Send className="w-5 h-5" />
+            Invia Domanda al Repository Docente
+          </button>
+        </div>
+      </form>
+
+      {/* Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isImagePickerOpen}
+        onClose={() => setIsImagePickerOpen(false)}
+        onSelectImage={handleImagePicked}
+      />
+    </div>
+  );
+};
