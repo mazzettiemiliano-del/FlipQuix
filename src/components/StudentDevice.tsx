@@ -61,10 +61,22 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
     if (initialPin) setPin(initialPin);
   }, [initialPin]);
 
-  const activePlayer = (myPlayer && roomState.players[myPlayer.id]) || myPlayer;
-  const currentQ = roomState.questions[roomState.currentQuestionIndex];
-  const myAnswer = activePlayer ? roomState.answersThisTurn[activePlayer.id] : null;
-  const isMyOwnQuestion = currentQ && activePlayer && currentQ.creatorName === activePlayer.name;
+  const activePlayer =
+    (myPlayer && roomState.players && roomState.players[myPlayer.id]) || myPlayer;
+  const questionsList = roomState.questions || [];
+  const currentQ = questionsList[roomState.currentQuestionIndex] || questionsList[0];
+  const rawAnswer =
+    activePlayer && roomState.answersThisTurn
+      ? roomState.answersThisTurn[activePlayer.id]
+      : null;
+  // Answer must belong to the current turn/question
+  const myAnswer =
+    rawAnswer &&
+    (!roomState.turnStartTime || rawAnswer.submittedAt >= roomState.turnStartTime - 2000)
+      ? rawAnswer
+      : null;
+  const isMyOwnQuestion =
+    currentQ && activePlayer && currentQ.creatorName === activePlayer.name;
 
   // Countdown timer when question is active
   useEffect(() => {
@@ -355,14 +367,14 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
             onAnswer={onSubmitAnswer}
             disabled={currentQ.type === 'draw_vote' ? false : myAnswer !== null}
             myPlayerId={activePlayer.id}
-            drawings={roomState.drawingsThisTurn}
+            drawings={roomState.drawingsThisTurn || {}}
             isGalleryMode={false}
             onSaveDrawing={onSaveDrawing}
             onVoteDrawing={onVoteDrawing}
           />
 
           {currentQ.type === 'draw_vote' ? (
-            roomState.drawingsThisTurn[activePlayer.id] ? (
+            roomState.drawingsThisTurn && roomState.drawingsThisTurn[activePlayer.id] ? (
               <div className="p-4 bg-emerald-500/20 border-2 border-emerald-500/60 rounded-2xl text-center text-sm font-black text-emerald-300 flex items-center justify-center gap-2 shadow-xl">
                 <CheckCircle className="w-5 h-5 text-emerald-400 stroke-[3]" />
                 <span>Disegno salvato con successo! Puoi ritoccarlo fino allo scadere del tempo.</span>
@@ -438,7 +450,7 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
           question={currentQ}
           onAnswer={() => {}}
           myPlayerId={activePlayer.id}
-          drawings={roomState.drawingsThisTurn}
+          drawings={roomState.drawingsThisTurn || {}}
           isGalleryMode={true}
           onSaveDrawing={onSaveDrawing}
           onVoteDrawing={onVoteDrawing}

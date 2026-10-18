@@ -153,31 +153,40 @@ export const MathChallengePlayer: React.FC<MathChallengePlayerProps> = ({
 
       {/* Virtual Touch Keypad for Smartphones & Tablets */}
       {!submitted && !disabled && (
-        <div className="bg-slate-900/95 border border-slate-800 p-3 rounded-2xl max-w-sm mx-auto w-full shadow-xl">
-          <div className="text-[11px] font-bold text-slate-400 text-center mb-2">
-            Tastierino Numerico Rapido (Operazione {activeInputIdx + 1} di {problems.length})
+        <div className="bg-slate-900/95 border border-slate-800 p-3.5 rounded-2xl max-w-sm mx-auto w-full shadow-2xl">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-2.5 px-1">
+            <span>Tastierino Numerico (Operazione {activeInputIdx + 1} di {problems.length})</span>
+            <span className="text-amber-400 font-mono">
+              {answers[activeInputIdx] ? `Risultato: ${answers[activeInputIdx]}` : 'In attesa...'}
+            </span>
           </div>
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-4 gap-2">
             {['1', '2', '3', 'del'].map((k) => (
               <button
                 key={k}
                 type="button"
-                onClick={() => handleKeypadPress(k)}
-                className={`py-3 rounded-xl font-mono font-black text-base transition-all active:scale-95 ${
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeypadPress(k);
+                }}
+                className={`py-3.5 rounded-xl font-mono font-black text-base transition-all active:scale-95 cursor-pointer ${
                   k === 'del'
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center justify-center'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center justify-center'
                     : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
                 }`}
               >
-                {k === 'del' ? <Delete className="w-4 h-4" /> : k}
+                {k === 'del' ? <Delete className="w-5 h-5" /> : k}
               </button>
             ))}
             {['4', '5', '6', '-'].map((k) => (
               <button
                 key={k}
                 type="button"
-                onClick={() => handleKeypadPress(k)}
-                className="py-3 rounded-xl font-mono font-black text-base bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-all active:scale-95"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeypadPress(k);
+                }}
+                className="py-3.5 rounded-xl font-mono font-black text-base bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-all active:scale-95 cursor-pointer"
               >
                 {k}
               </button>
@@ -186,23 +195,45 @@ export const MathChallengePlayer: React.FC<MathChallengePlayerProps> = ({
               <button
                 key={k}
                 type="button"
-                onClick={() => handleKeypadPress(k)}
-                className={`py-3 rounded-xl font-mono font-black text-base transition-all active:scale-95 ${
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeypadPress(k);
+                }}
+                className={`py-3.5 rounded-xl font-mono font-black text-base transition-all active:scale-95 cursor-pointer ${
                   k === 'next'
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center text-xs'
+                    ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/40 flex items-center justify-center text-xs'
                     : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
                 }`}
               >
-                {k === 'next' ? 'Succ.' : k}
+                {k === 'next' ? 'Avanti ➔' : k}
               </button>
             ))}
-            <div className="col-span-4 flex gap-1.5">
+            <div className="col-span-4 flex gap-2">
               <button
                 type="button"
-                onClick={() => handleKeypadPress('0')}
-                className="flex-1 py-3 rounded-xl font-mono font-black text-base bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-all active:scale-95"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeypadPress('0');
+                }}
+                className="w-1/3 py-3.5 rounded-xl font-mono font-black text-base bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-all active:scale-95 cursor-pointer"
               >
                 0
+              </button>
+              <button
+                type="button"
+                disabled={!isComplete}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  if (isComplete) handleConfirm();
+                }}
+                className={`w-2/3 py-3.5 rounded-xl font-black text-sm flex items-center justify-center gap-1.5 transition-all shadow-md ${
+                  isComplete
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white cursor-pointer active:scale-95 ring-2 ring-emerald-400'
+                    : 'bg-slate-800/80 text-slate-500 border border-slate-700/80 cursor-not-allowed opacity-60'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {isComplete ? 'Invia Risultati 🚀' : `Compila (${answers.filter((a) => a?.trim()).length}/${problems.length})`}
               </button>
             </div>
           </div>

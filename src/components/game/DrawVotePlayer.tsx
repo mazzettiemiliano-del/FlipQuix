@@ -82,8 +82,9 @@ export const DrawVotePlayer: React.FC<DrawVotePlayerProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {drawingList.map((item) => {
             const isOwn = item.playerId === myPlayerId;
-            const starCount = item.votes.length;
-            const isVotedByMe = item.votes.includes(myPlayerId) || hasVoted === item.playerId;
+            const votesArray = Array.isArray(item.votes) ? item.votes : [];
+            const starCount = votesArray.length;
+            const isVotedByMe = votesArray.includes(myPlayerId) || hasVoted === item.playerId;
 
             return (
               <div

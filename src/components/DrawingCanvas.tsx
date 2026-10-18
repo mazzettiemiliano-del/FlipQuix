@@ -108,6 +108,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       ctx.lineJoin = 'round';
       ctx.lineWidth = brushSize;
       ctx.strokeStyle = tool === 'eraser' ? '#0f172a' : color;
+      ctx.lineTo(pos.x + 0.1, pos.y + 0.1);
+      ctx.stroke();
     }
   };
 

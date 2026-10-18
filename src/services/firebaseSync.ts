@@ -10,6 +10,7 @@ import {
   DrawingSubmission,
   GamePhase
 } from '../types/quiz';
+import { INITIAL_QUESTIONS } from '../data/initialQuestions';
 
 export interface FirebaseDiagnosticResult {
   initialized: boolean;
@@ -68,6 +69,83 @@ function cleanPayload(obj: any): any {
   return JSON.parse(JSON.stringify(obj));
 }
 
+export function sanitizeRoomState(data: any, fallback?: RoomState): RoomState {
+  if (!data || typeof data !== 'object') {
+    return fallback || ({
+      roomCode: 'FLIP-101',
+      roomName: 'Classe 3B • Scienze e Storia',
+      phase: 'lobby',
+      currentQuestionIndex: 0,
+      questions: INITIAL_QUESTIONS,
+      players: {},
+      answersThisTurn: {},
+      drawingsThisTurn: {},
+      turnStartTime: 0,
+      turnDuration: 25,
+      settings: {
+        basePoints: 50,
+        fastFingerBonus1: 20,
+        fastFingerBonus2: 15,
+        fastFingerBonus3: 10,
+        defaultTimeLimit: 25,
+        soundEnabled: true
+      }
+    } as RoomState);
+  }
+
+  const rawQuestions = Array.isArray(data.questions)
+    ? data.questions
+    : (data.questions && typeof data.questions === 'object' ? Object.values(data.questions) : null);
+
+  const fallbackQuestions = fallback?.questions && fallback.questions.length > 0
+    ? fallback.questions
+    : INITIAL_QUESTIONS;
+
+  const questions = rawQuestions && rawQuestions.length > 0
+    ? (rawQuestions as Question[])
+    : fallbackQuestions;
+
+  const curIndex = typeof data.currentQuestionIndex === 'number' && data.currentQuestionIndex >= 0
+    ? Math.min(data.currentQuestionIndex, Math.max(0, (questions.length || 1) - 1))
+    : 0;
+
+  // Normalize drawings to guarantee votes array
+  const rawDrawings = (data.drawingsThisTurn && typeof data.drawingsThisTurn === 'object') ? data.drawingsThisTurn : {};
+  const normalizedDrawings: Record<string, DrawingSubmission> = {};
+  for (const [k, d] of Object.entries(rawDrawings)) {
+    if (d && typeof d === 'object') {
+      const item = d as any;
+      normalizedDrawings[k] = {
+        playerId: item.playerId || k,
+        playerName: item.playerName || 'Studente',
+        dataUrl: item.dataUrl || '',
+        votes: Array.isArray(item.votes) ? item.votes : []
+      };
+    }
+  }
+
+  return {
+    roomCode: typeof data.roomCode === 'string' ? data.roomCode : (fallback?.roomCode || 'FLIP-101'),
+    roomName: typeof data.roomName === 'string' ? data.roomName : (fallback?.roomName || 'Classe 3B • Scienze e Storia'),
+    phase: typeof data.phase === 'string' ? data.phase : (fallback?.phase || 'lobby'),
+    currentQuestionIndex: curIndex,
+    questions,
+    players: (data.players && typeof data.players === 'object') ? data.players : (fallback?.players || {}),
+    answersThisTurn: (data.answersThisTurn && typeof data.answersThisTurn === 'object') ? data.answersThisTurn : {},
+    drawingsThisTurn: normalizedDrawings,
+    turnStartTime: typeof data.turnStartTime === 'number' ? data.turnStartTime : 0,
+    turnDuration: typeof data.turnDuration === 'number' ? data.turnDuration : 25,
+    settings: {
+      basePoints: data.settings?.basePoints ?? fallback?.settings?.basePoints ?? 50,
+      fastFingerBonus1: data.settings?.fastFingerBonus1 ?? fallback?.settings?.fastFingerBonus1 ?? 20,
+      fastFingerBonus2: data.settings?.fastFingerBonus2 ?? fallback?.settings?.fastFingerBonus2 ?? 15,
+      fastFingerBonus3: data.settings?.fastFingerBonus3 ?? fallback?.settings?.fastFingerBonus3 ?? 10,
+      defaultTimeLimit: data.settings?.defaultTimeLimit ?? fallback?.settings?.defaultTimeLimit ?? 25,
+      soundEnabled: data.settings?.soundEnabled ?? fallback?.settings?.soundEnabled ?? true
+    }
+  };
+}
+
 export const firebaseSync = {
   // Check live connection state
   isConnected(): boolean {
@@ -92,9 +170,15 @@ export const firebaseSync = {
       const snap = await get(roomRef);
       if (snap.exists()) {
         const data = snap.val();
-        if (data && data.phase && data.questions) {
+        if (data && data.phase) {
           notifyConnectionChange(true);
-          return data as RoomState;
+          const sanitized = sanitizeRoomState(data, defaultState);
+          // If questions were missing in existing DB room, repair it in Firebase
+          if (!data.questions || (Array.isArray(data.questions) && data.questions.length === 0)) {
+            const questionsRef = ref(rtdb, `rooms/${cleanCode}/questions`);
+            set(questionsRef, cleanPayload(sanitized.questions)).catch(() => {});
+          }
+          return sanitized;
         }
       }
       // If room doesn't exist, create it with initial questions & state
@@ -109,7 +193,7 @@ export const firebaseSync = {
   },
 
   // Subscribe to real-time room changes in Firebase RTDB
-  listenToRoom(roomCode: string, onUpdate: (state: RoomState) => void): () => void {
+  listenToRoom(roomCode: string, onUpdate: (state: RoomState) => void, fallbackState?: RoomState): () => void {
     const cleanCode = roomCode.replace(/[^a-zA-Z0-9_-]/g, '');
 
     try {
@@ -121,18 +205,14 @@ export const firebaseSync = {
             notifyConnectionChange(true);
             const data = snapshot.val();
             if (data && data.phase) {
-              // Ensure objects exist
-              data.players = data.players || {};
-              data.questions = data.questions || [];
-              data.answersThisTurn = data.answersThisTurn || {};
-              data.drawingsThisTurn = data.drawingsThisTurn || {};
-              onUpdate(data as RoomState);
+              const sanitized = sanitizeRoomState(data, fallbackState);
+              onUpdate(sanitized);
             }
           }
         },
         (error) => {
           console.warn('Realtime Database listener note:', error.message);
-          this.listenToFirestore(cleanCode, onUpdate);
+          this.listenToFirestore(cleanCode, onUpdate, fallbackState);
         }
       );
 
@@ -141,11 +221,11 @@ export const firebaseSync = {
       };
     } catch (e) {
       console.warn('Firebase RTDB error, falling back to Firestore:', e);
-      return this.listenToFirestore(cleanCode, onUpdate);
+      return this.listenToFirestore(cleanCode, onUpdate, fallbackState);
     }
   },
 
-  listenToFirestore(roomCode: string, onUpdate: (state: RoomState) => void): () => void {
+  listenToFirestore(roomCode: string, onUpdate: (state: RoomState) => void, fallbackState?: RoomState): () => void {
     try {
       const roomDoc = doc(db, 'rooms', roomCode);
       const unsub = onSnapshot(
@@ -155,11 +235,8 @@ export const firebaseSync = {
             notifyConnectionChange(true);
             const data = snapshot.data();
             if (data && data.phase) {
-              data.players = data.players || {};
-              data.questions = data.questions || [];
-              data.answersThisTurn = data.answersThisTurn || {};
-              data.drawingsThisTurn = data.drawingsThisTurn || {};
-              onUpdate(data as RoomState);
+              const sanitized = sanitizeRoomState(data, fallbackState);
+              onUpdate(sanitized);
             }
           }
         },

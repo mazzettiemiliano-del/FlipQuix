@@ -159,8 +159,21 @@ export default function App() {
           }
         }));
       }
+
+      // Restore custom teacher configuration if saved
+      const savedConfig = localStorage.getItem('flipquiz_custom_config');
+      if (savedConfig) {
+        const parsedConfig = JSON.parse(savedConfig);
+        if (parsedConfig && Array.isArray(parsedConfig.questions)) {
+          setRoomState((prev) => ({
+            ...prev,
+            questions: parsedConfig.questions,
+            settings: parsedConfig.settings ? { ...prev.settings, ...parsedConfig.settings } : prev.settings
+          }));
+        }
+      }
     } catch (e) {
-      console.warn('Could not read saved player from storage:', e);
+      console.warn('Could not read saved player/config from storage:', e);
     }
 
     // 2. Listen to Firebase connection state
@@ -176,16 +189,18 @@ export default function App() {
     const unsubFirebase = firebaseSync.listenToRoom(roomState.roomCode, (firebaseState) => {
       setRoomState((prev) => {
         // Preserve local student player if present
-        let mergedPlayers = { ...firebaseState.players };
+        let mergedPlayers = { ...(firebaseState.players || {}) };
         if (myPlayer && !mergedPlayers[myPlayer.id]) {
           mergedPlayers[myPlayer.id] = myPlayer;
         }
         return {
           ...firebaseState,
-          players: mergedPlayers
+          players: mergedPlayers,
+          answersThisTurn: firebaseState.answersThisTurn || {},
+          drawingsThisTurn: firebaseState.drawingsThisTurn || {}
         };
       });
-    });
+    }, roomState);
 
     // 4. Same-tab BroadcastChannel sync for multi-tab
     const unsubApi = api.subscribeToRoom((serverState) => {
@@ -201,7 +216,7 @@ export default function App() {
 
   // Keep myPlayer score and streak in sync with roomState.players
   const activeStudent: Player | null =
-    myPlayer && roomState.players[myPlayer.id]
+    myPlayer && roomState.players && roomState.players[myPlayer.id]
       ? roomState.players[myPlayer.id]
       : myPlayer;
 
@@ -246,7 +261,7 @@ export default function App() {
       // Simulate bot answers only if on teacher screen
       clearBotTimeouts();
       if (viewRole === 'teacher') {
-        const simulatedPlayers = Object.values(roomState.players).filter((p) => p.isSimulated);
+        const simulatedPlayers = Object.values(roomState.players || {}).filter((p) => p.isSimulated);
 
         simulatedPlayers.forEach((bot) => {
           const randomDelay = Math.random() * (duration * 0.55) + 1200;
@@ -613,10 +628,28 @@ export default function App() {
       const updatedQuestions = prev.questions.map((q) =>
         qId === 'all' || q.id === qId ? { ...q, points, timeLimit } : q
       );
+      const updatedSettings = {
+        ...prev.settings,
+        ...(qId === 'all' ? { basePoints: points, defaultTimeLimit: timeLimit } : {})
+      };
       const updated: RoomState = {
         ...prev,
-        questions: updatedQuestions
+        questions: updatedQuestions,
+        settings: updatedSettings
       };
+
+      try {
+        localStorage.setItem(
+          'flipquiz_custom_config',
+          JSON.stringify({
+            questions: updatedQuestions,
+            settings: updatedSettings
+          })
+        );
+      } catch (e) {
+        console.warn('Could not save custom config to localStorage:', e);
+      }
+
       firebaseSync.pushRoomState(updated);
       api.broadcastLocal(updated);
       return updated;

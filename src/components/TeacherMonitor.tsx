@@ -73,10 +73,12 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number>(25);
 
-  const playersList = Object.values(roomState.players);
-  const currentQ = roomState.questions[roomState.currentQuestionIndex];
-  const answersList = Object.values(roomState.answersThisTurn);
-  const drawingsList = Object.values(roomState.drawingsThisTurn);
+  const playersList = Object.values(roomState.players || {});
+  const questionsList = roomState.questions || [];
+  const currentQ = questionsList[roomState.currentQuestionIndex] || questionsList[0];
+  const answersList = Object.values(roomState.answersThisTurn || {});
+  const drawingsList = Object.values(roomState.drawingsThisTurn || {});
+  const soundEnabled = roomState.settings?.soundEnabled ?? true;
 
   // Sound effects on phase transitions
   useEffect(() => {
@@ -96,7 +98,7 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
   useEffect(() => {
     if (roomState.phase !== 'question_active' || !currentQ) return;
 
-    setTimeRemaining(currentQ.timeLimit);
+    setTimeRemaining(currentQ.timeLimit || 25);
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
@@ -105,7 +107,7 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
           return 0;
         }
 
-        if (roomState.settings.soundEnabled) {
+        if (soundEnabled) {
           if (prev <= 5 && prev > 1) {
             sound.playUrgentTick();
           } else {
@@ -117,7 +119,7 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [roomState.phase, roomState.currentQuestionIndex, currentQ, roomState.settings.soundEnabled]);
+  }, [roomState.phase, roomState.currentQuestionIndex, currentQ, soundEnabled]);
 
   // Ranked leaderboard
   const sortedPlayers = [...playersList].sort((a, b) => b.score - a.score);
@@ -136,8 +138,8 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
       setEditTime(q.timeLimit);
     } else {
       setSelectedConfigQId('all');
-      setEditPoints(50);
-      setEditTime(25);
+      setEditPoints(roomState.settings?.basePoints ?? 50);
+      setEditTime(roomState.settings?.defaultTimeLimit ?? 25);
     }
     setIsConfigOpen(true);
   };
@@ -173,13 +175,13 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
           <button
             onClick={onToggleSound}
             className={`p-2.5 rounded-xl border transition-colors cursor-pointer ${
-              roomState.settings.soundEnabled
+              soundEnabled
                 ? 'bg-slate-800 border-slate-700 text-indigo-400'
                 : 'bg-slate-800 border-slate-700 text-slate-500'
             }`}
-            title={roomState.settings.soundEnabled ? 'Disattiva suoni' : 'Attiva suoni'}
+            title={soundEnabled ? 'Disattiva suoni' : 'Attiva suoni'}
           >
-            {roomState.settings.soundEnabled ? (
+            {soundEnabled ? (
               <Volume2 className="w-4 h-4" />
             ) : (
               <VolumeX className="w-4 h-4" />
@@ -480,7 +482,7 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
               </span>
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {playersList.map((p) => {
-                  const hasAnswered = !!roomState.answersThisTurn[p.id];
+                  const hasAnswered = !!(roomState.answersThisTurn && roomState.answersThisTurn[p.id]);
                   return (
                     <div
                       key={p.id}
@@ -829,7 +831,10 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
                   onChange={(e) => {
                     const val = e.target.value;
                     setSelectedConfigQId(val);
-                    if (val !== 'all') {
+                    if (val === 'all') {
+                      setEditPoints(roomState.settings?.basePoints ?? 50);
+                      setEditTime(roomState.settings?.defaultTimeLimit ?? 25);
+                    } else {
                       const found = roomState.questions.find((q) => q.id === val);
                       if (found) {
                         setEditPoints(found.points);
