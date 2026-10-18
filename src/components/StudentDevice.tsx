@@ -353,7 +353,7 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
           <QuestionRenderer
             question={currentQ}
             onAnswer={onSubmitAnswer}
-            disabled={myAnswer !== null}
+            disabled={currentQ.type === 'draw_vote' ? false : myAnswer !== null}
             myPlayerId={activePlayer.id}
             drawings={roomState.drawingsThisTurn}
             isGalleryMode={false}
@@ -361,7 +361,18 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
             onVoteDrawing={onVoteDrawing}
           />
 
-          {myAnswer ? (
+          {currentQ.type === 'draw_vote' ? (
+            roomState.drawingsThisTurn[activePlayer.id] ? (
+              <div className="p-4 bg-emerald-500/20 border-2 border-emerald-500/60 rounded-2xl text-center text-sm font-black text-emerald-300 flex items-center justify-center gap-2 shadow-xl">
+                <CheckCircle className="w-5 h-5 text-emerald-400 stroke-[3]" />
+                <span>Disegno salvato con successo! Puoi ritoccarlo fino allo scadere del tempo.</span>
+              </div>
+            ) : (
+              <div className="text-center text-xs text-slate-400">
+                Disegna sul riquadro qui sopra. Il disegno viene salvato automaticamente! ⭐
+              </div>
+            )
+          ) : myAnswer ? (
             <div className="p-4 bg-emerald-500/20 border-2 border-emerald-500/60 rounded-2xl text-center text-sm font-black text-emerald-300 flex items-center justify-center gap-2 animate-bounce shadow-xl">
               <CheckCircle className="w-5 h-5 text-emerald-400 stroke-[3]" />
               <span>Risposta registrata con successo!</span>
@@ -426,7 +437,7 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
         <QuestionRenderer
           question={currentQ}
           onAnswer={() => {}}
-          myPlayerId={myPlayer.id}
+          myPlayerId={activePlayer.id}
           drawings={roomState.drawingsThisTurn}
           isGalleryMode={true}
           onSaveDrawing={onSaveDrawing}
@@ -442,10 +453,10 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
             {roomState.phase === 'podium' ? 'Fine Partita!' : 'Classifica Turno'}
           </h3>
           <p className="text-xs text-slate-400">
-            Il tuo punteggio attuale è <strong className="text-amber-300 font-bold">{myPlayer.score} punti</strong>.
+            Il tuo punteggio attuale è <strong className="text-amber-300 font-bold">{activePlayer.score} punti</strong>.
           </p>
           <p className="text-xs text-slate-500">
-            Guarda la LIM per i dettagli del turno e i prossimi passaggi!
+            Guarda la LIM per i dettagli del turno e i vincitori sul podio!
           </p>
         </div>
       )}

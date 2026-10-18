@@ -13,6 +13,7 @@ import { StudentDevice } from './components/StudentDevice';
 import { ArchitectureGuideModal } from './components/ArchitectureGuideModal';
 import { FirebaseDiagnosticModal } from './components/FirebaseDiagnosticModal';
 import { sound } from './utils/audio';
+import confetti from 'canvas-confetti';
 import { api } from './services/api';
 import { firebaseSync } from './services/firebaseSync';
 import {
@@ -602,15 +603,15 @@ export default function App() {
     api.nextStep();
   };
 
-  // Teacher updating points and time limit for a question
+  // Teacher updating points and time limit for a question (or globally for all)
   const handleUpdateQuestionPointsAndTime = (
-    qId: string,
+    qId: string | 'all',
     points: number,
     timeLimit: number
   ) => {
     setRoomState((prev) => {
       const updatedQuestions = prev.questions.map((q) =>
-        q.id === qId ? { ...q, points, timeLimit } : q
+        qId === 'all' || q.id === qId ? { ...q, points, timeLimit } : q
       );
       const updated: RoomState = {
         ...prev,
@@ -620,6 +621,61 @@ export default function App() {
       api.broadcastLocal(updated);
       return updated;
     });
+  };
+
+  // Teacher forcefully terminating the race/game immediately to podium
+  const handleTerminateGame = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    clearBotTimeouts();
+
+    setRoomState((prev) => {
+      const updated: RoomState = {
+        ...prev,
+        phase: 'podium'
+      };
+      api.broadcastLocal(updated);
+      return updated;
+    });
+
+    firebaseSync.setPhase(roomState.roomCode, 'podium');
+    sound.playFanfare();
+    confetti({
+      particleCount: 150,
+      spread: 100,
+      origin: { y: 0.6 }
+    });
+  };
+
+  // Teacher completely wiping room data from Firebase RTDB and resetting session
+  const handleWipeDatabase = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    clearBotTimeouts();
+
+    const freshState: RoomState = {
+      roomCode: roomState.roomCode,
+      roomName: roomState.roomName || 'FlipQuiz Classe Live',
+      phase: 'lobby',
+      currentQuestionIndex: 0,
+      questions: INITIAL_QUESTIONS,
+      players: {},
+      answersThisTurn: {},
+      drawingsThisTurn: {},
+      turnStartTime: 0,
+      turnDuration: 25,
+      settings: {
+        basePoints: 50,
+        fastFingerBonus1: 20,
+        fastFingerBonus2: 15,
+        fastFingerBonus3: 10,
+        defaultTimeLimit: 25,
+        soundEnabled: true
+      }
+    };
+
+    setRoomState(freshState);
+    api.broadcastLocal(freshState);
+    firebaseSync.wipeRoomDatabase(roomState.roomCode, freshState);
+    api.resetGame();
   };
 
   // Teacher deleting question
@@ -794,11 +850,13 @@ export default function App() {
             onStartGame={handleStartGame}
             onNextQuestion={handleNextQuestion}
             onEndQuestionTimerNow={handleEndQuestionTimer}
+            onTerminateGame={handleTerminateGame}
             onUpdateQuestionPointsAndTime={handleUpdateQuestionPointsAndTime}
             onDeleteQuestion={handleDeleteQuestion}
             onAddSimulatedStudents={handleAddSimulatedStudents}
             onToggleSound={handleToggleSound}
             onResetGame={handleResetGame}
+            onWipeDatabase={handleWipeDatabase}
           />
         ) : (
           <StudentDevice

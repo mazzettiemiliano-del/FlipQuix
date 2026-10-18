@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Eraser, RotateCcw, Palette, Square, Circle, Minus, Brush, Check } from 'lucide-react';
+import { Eraser, RotateCcw, Palette, Square, Circle, Minus, Brush, Check, Send } from 'lucide-react';
 
 interface DrawingCanvasProps {
   onSaveDrawing: (dataUrl: string) => void;
@@ -30,7 +30,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [color, setColor] = useState('#ffffff');
-  const [brushSize, setBrushSize] = useState(4);
+  const [brushSize, setBrushSize] = useState(5);
   const [tool, setTool] = useState<'brush' | 'eraser' | 'line' | 'rect' | 'circle'>('brush');
   const [history, setHistory] = useState<ImageData[]>([]);
   const [hasDrawn, setHasDrawn] = useState(false);
@@ -39,15 +39,15 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const startPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const snapshot = useRef<ImageData | null>(null);
 
-  // Initialize canvas
+  // Initialize canvas background
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Fill background with dark canvas tone
-    ctx.fillStyle = '#1e293b';
+    // Fill background with rich dark canvas tone
+    ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (initialData) {
@@ -68,37 +68,30 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     setHistory((prev) => [...prev.slice(-10), imgData]);
   };
 
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
+  const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
-    let clientX = 0;
-    let clientY = 0;
-
-    if ('touches' in e && e.touches.length > 0) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    } else if ('clientX' in e) {
-      clientX = (e as React.MouseEvent).clientX;
-      clientY = (e as React.MouseEvent).clientY;
-    }
-
     return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
     };
   };
 
-  const startDraw = (e: React.MouseEvent | React.TouchEvent) => {
+  const startDraw = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (disabled) return;
-    e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Capture pointer so drawing keeps tracking even if moving outside element boundary
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
 
     saveToHistory();
     const pos = getCoordinates(e);
@@ -114,13 +107,12 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.lineWidth = brushSize;
-      ctx.strokeStyle = tool === 'eraser' ? '#1e293b' : color;
+      ctx.strokeStyle = tool === 'eraser' ? '#0f172a' : color;
     }
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing || disabled) return;
-    e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -159,9 +151,14 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
   };
 
-  const stopDraw = () => {
+  const stopDraw = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
     setIsDrawing(false);
+    if (e && e.currentTarget) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    }
     triggerAutoSave();
   };
 
@@ -193,23 +190,23 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     saveToHistory();
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     setHasDrawn(false);
     triggerAutoSave();
   };
 
   return (
-    <div className="flex flex-col gap-3 w-full max-w-xl mx-auto">
+    <div className="flex flex-col gap-3 w-full max-w-xl mx-auto select-none">
       {/* Canvas Toolset */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-800/90 border border-slate-700 rounded-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-850 border border-slate-700/80 rounded-2xl shadow-md">
         {/* Tools */}
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setTool('brush')}
             className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all ${
-              tool === 'brush' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700'
+              tool === 'brush' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-750'
             }`}
             title="Pennello a mano libera"
           >
@@ -219,9 +216,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             type="button"
             onClick={() => setTool('eraser')}
             className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all ${
-              tool === 'eraser' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-700'
+              tool === 'eraser' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-750'
             }`}
-            title="Gomma"
+            title="Gomma per cancellare"
           >
             <Eraser className="w-4 h-4" />
           </button>
@@ -230,7 +227,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             type="button"
             onClick={() => setTool('line')}
             className={`p-2 rounded-xl transition-all ${
-              tool === 'line' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'
+              tool === 'line' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-750'
             }`}
             title="Linea retta"
           >
@@ -240,7 +237,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             type="button"
             onClick={() => setTool('rect')}
             className={`p-2 rounded-xl transition-all ${
-              tool === 'rect' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'
+              tool === 'rect' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-750'
             }`}
             title="Rettangolo"
           >
@@ -250,7 +247,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             type="button"
             onClick={() => setTool('circle')}
             className={`p-2 rounded-xl transition-all ${
-              tool === 'circle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'
+              tool === 'circle' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-750'
             }`}
             title="Cerchio"
           >
@@ -260,19 +257,19 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
         {/* Brush Size */}
         <div className="flex items-center gap-2 px-2">
-          <span className="text-[11px] text-slate-400">Tratto:</span>
-          {[2, 5, 10, 16].map((size) => (
+          <span className="text-[11px] text-slate-400 font-bold">Tratto:</span>
+          {[3, 6, 12, 20].map((size) => (
             <button
               key={size}
               type="button"
               onClick={() => setBrushSize(size)}
-              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
-                brushSize === size ? 'bg-indigo-500/30 ring-1 ring-indigo-500' : 'hover:bg-slate-700'
+              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                brushSize === size ? 'bg-indigo-500/30 ring-2 ring-indigo-400' : 'hover:bg-slate-750'
               }`}
             >
               <div
                 className="rounded-full bg-white"
-                style={{ width: `${Math.max(4, size * 0.8)}px`, height: `${Math.max(4, size * 0.8)}px` }}
+                style={{ width: `${Math.max(4, size * 0.7)}px`, height: `${Math.max(4, size * 0.7)}px` }}
               />
             </button>
           ))}
@@ -284,7 +281,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             type="button"
             disabled={history.length === 0}
             onClick={undo}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-xl disabled:opacity-30 transition-colors"
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-750 rounded-xl disabled:opacity-30 transition-colors"
             title="Annulla ultimo tratto"
           >
             <RotateCcw className="w-4 h-4" />
@@ -292,7 +289,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           <button
             type="button"
             onClick={clearCanvas}
-            className="px-2.5 py-1 text-xs text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors"
+            className="px-2.5 py-1 text-xs text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors font-bold"
           >
             Pulisci
           </button>
@@ -300,7 +297,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       </div>
 
       {/* Color Palette */}
-      <div className="flex items-center justify-center gap-2 p-2 bg-slate-800/60 rounded-xl border border-slate-700/60">
+      <div className="flex items-center justify-center gap-2 p-2 bg-slate-850/80 rounded-xl border border-slate-750">
         <Palette className="w-3.5 h-3.5 text-slate-400 mr-1" />
         {COLORS.map((c) => (
           <button
@@ -310,9 +307,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               setColor(c);
               if (tool === 'eraser') setTool('brush');
             }}
-            className={`w-7 h-7 rounded-full transition-transform ${
+            className={`w-7 h-7 rounded-full transition-transform cursor-pointer ${
               color === c && tool !== 'eraser'
-                ? 'scale-125 ring-2 ring-white ring-offset-2 ring-offset-slate-900 shadow-md'
+                ? 'scale-125 ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 shadow-md'
                 : 'hover:scale-110 opacity-90'
             }`}
             style={{ backgroundColor: c }}
@@ -320,33 +317,42 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
         ))}
       </div>
 
-      {/* Main Drawing Canvas */}
-      <div className="relative rounded-2xl overflow-hidden border-2 border-slate-700 shadow-2xl bg-slate-850 touch-none">
+      {/* Main Drawing Canvas with Touch Action None & Pointer Events */}
+      <div className="relative rounded-2xl overflow-hidden border-2 border-slate-750 shadow-2xl bg-slate-950">
         <canvas
           ref={canvasRef}
           width={640}
           height={height}
-          onMouseDown={startDraw}
-          onMouseMove={draw}
-          onMouseUp={stopDraw}
-          onMouseLeave={stopDraw}
-          onTouchStart={startDraw}
-          onTouchMove={draw}
-          onTouchEnd={stopDraw}
-          className="w-full h-auto cursor-crosshair block bg-slate-900"
+          style={{ touchAction: 'none' }}
+          onPointerDown={startDraw}
+          onPointerMove={draw}
+          onPointerUp={stopDraw}
+          onPointerCancel={stopDraw}
+          className="w-full h-auto cursor-crosshair block bg-slate-950"
         />
 
         {savedSuccess && (
-          <div className="absolute top-3 right-3 bg-emerald-500/90 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1 animate-fade-in">
-            <Check className="w-3.5 h-3.5" />
-            Tracciato salvato
+          <div className="absolute top-3 right-3 bg-emerald-500 text-slate-950 text-xs font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1.5 animate-bounce">
+            <Check className="w-4 h-4 stroke-[3]" />
+            Disegno salvato!
           </div>
         )}
       </div>
 
-      <p className="text-center text-xs text-slate-400">
-        Disegna sul riquadro. Allo scadere del tempo tutti vedranno il tuo disegno e voteranno con le stelle!
-      </p>
+      {/* Explicit Save & Send Button */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-slate-400">
+          Disegna con il dito o il mouse. Il disegno viene salvato automaticamente in tempo reale!
+        </p>
+        <button
+          type="button"
+          onClick={triggerAutoSave}
+          className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-transform active:scale-95 shrink-0"
+        >
+          <Send className="w-3.5 h-3.5" />
+          Conferma Disegno
+        </button>
+      </div>
     </div>
   );
 };

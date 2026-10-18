@@ -346,9 +346,12 @@ export const firebaseSync = {
         if (turnDuration) updates.turnDuration = turnDuration;
       }
 
-      // Reset turn answers when starting intro or active question
+      // Reset turn answers & drawings when starting intro or active question
       if (phase === 'question_intro') {
-        updates.answersThisTurn = {};
+        const answersRef = ref(rtdb, `rooms/${cleanCode}/answersThisTurn`);
+        const drawingsRef = ref(rtdb, `rooms/${cleanCode}/drawingsThisTurn`);
+        await set(answersRef, null);
+        await set(drawingsRef, null);
       }
 
       const roomRef = ref(rtdb, `rooms/${cleanCode}`);
@@ -368,13 +371,33 @@ export const firebaseSync = {
       const roomRef = ref(rtdb, `rooms/${cleanCode}`);
       await update(roomRef, {
         phase: 'lobby',
-        currentQuestionIndex: 0,
-        answersThisTurn: {}
+        currentQuestionIndex: 0
       });
+      await set(ref(rtdb, `rooms/${cleanCode}/answersThisTurn`), null);
+      await set(ref(rtdb, `rooms/${cleanCode}/drawingsThisTurn`), null);
       notifyConnectionChange(true);
       return true;
     } catch (e) {
       console.warn('resetRoom Firebase error:', e);
+      return false;
+    }
+  },
+
+  // Completely wipe room database from Firebase and re-initialize
+  async wipeRoomDatabase(roomCode: string, freshState: RoomState): Promise<boolean> {
+    const cleanCode = roomCode.replace(/[^a-zA-Z0-9_-]/g, '');
+    try {
+      const roomRef = ref(rtdb, `rooms/${cleanCode}`);
+      // 1. Completely delete existing room node in Firebase RTDB
+      await set(roomRef, null);
+      // 2. Re-create clean initial room state
+      const payload = cleanPayload(freshState);
+      await set(roomRef, payload);
+      notifyConnectionChange(true);
+      console.log('Firebase room wiped and reinitialized successfully:', cleanCode);
+      return true;
+    } catch (e) {
+      console.warn('wipeRoomDatabase error:', e);
       return false;
     }
   },
