@@ -16,6 +16,13 @@ export const CellIdentifyPlayer: React.FC<CellIdentifyPlayerProps> = ({
   const [selectedCellIds, setSelectedCellIds] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
 
+  // Normalize cells safely whether array or Firebase object
+  const cells = Array.isArray(content?.cells)
+    ? content.cells
+    : content?.cells && typeof content.cells === 'object'
+    ? Object.values(content.cells)
+    : [];
+
   const toggleCell = (id: string) => {
     if (disabled || submitted) return;
     setSelectedCellIds((prev) =>
@@ -24,16 +31,20 @@ export const CellIdentifyPlayer: React.FC<CellIdentifyPlayerProps> = ({
   };
 
   const handleConfirm = () => {
-    if (disabled || submitted) return;
+    if (disabled || submitted || selectedCellIds.length === 0) return;
     setSubmitted(true);
 
     // Valid if every correct cell is selected AND no incorrect cell is selected
-    const correctIds = content.cells.filter((c) => c.isMatch).map((c) => c.id);
-    const hasAllCorrect = correctIds.every((id) => selectedCellIds.includes(id));
-    const hasNoIncorrect = selectedCellIds.every((id) => correctIds.includes(id));
+    const correctIds = cells.filter((c: any) => c.isMatch).map((c: any) => c.id);
+    const hasAllCorrect = correctIds.length > 0 && correctIds.every((id: string) => selectedCellIds.includes(id));
+    const hasNoIncorrect = selectedCellIds.every((id: string) => correctIds.includes(id));
     const isCorrect = hasAllCorrect && hasNoIncorrect;
 
-    onAnswer(isCorrect, { selectedCellIds });
+    const selectedTexts = cells
+      .filter((c: any) => selectedCellIds.includes(c.id))
+      .map((c: any) => c.text);
+
+    onAnswer(isCorrect, { selectedCellIds, selectedTexts });
   };
 
   return (
@@ -44,7 +55,7 @@ export const CellIdentifyPlayer: React.FC<CellIdentifyPlayerProps> = ({
           Trova tutti gli elementi collegati a:
         </span>
         <h2 className="text-3xl md:text-4xl font-black text-white mt-1 uppercase tracking-wider">
-          {content.stimulus}
+          {content?.stimulus || 'Elemento'}
         </h2>
         <p className="text-xs text-slate-300 mt-2">
           Clicca su tutte le celle corrette (anche più di una) e poi premi Conferma
@@ -53,7 +64,7 @@ export const CellIdentifyPlayer: React.FC<CellIdentifyPlayerProps> = ({
 
       {/* Grid of Cells */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
-        {content.cells.map((cell) => {
+        {cells.map((cell: any) => {
           const isSelected = selectedCellIds.includes(cell.id);
 
           return (

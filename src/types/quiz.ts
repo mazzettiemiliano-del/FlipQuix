@@ -30,10 +30,17 @@ export interface OpenShortContent {
   acceptedAnswers: string[]; // e.g. ["Roma", "roma"]
 }
 
+export interface BlankItem {
+  id: string;
+  correctWord: string;
+  distractors: string[];
+}
+
 export interface FillBlanksContent {
   originalText: string;
-  blankWord: string;
-  distractors: string[]; // 3 wrong words
+  blankWord?: string; // backwards compatibility for single blank
+  distractors?: string[]; // backwards compatibility for single blank
+  blanks?: BlankItem[]; // support for 1 or more custom blanks with choices
 }
 
 export interface MemoryMatchContent {
