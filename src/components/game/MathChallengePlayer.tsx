@@ -14,28 +14,20 @@ export const MathChallengePlayer: React.FC<MathChallengePlayerProps> = ({
   onAnswer,
   disabled = false
 }) => {
-  const [problems, setProblems] = useState<MathProblem[]>([]);
-  const [answers, setAnswers] = useState<string[]>([]);
+  const [problems, setProblems] = useState<MathProblem[]>(() => {
+    if (content?.generatedProblems && content.generatedProblems.length > 0) {
+      return content.generatedProblems;
+    }
+    const ops = (content?.operators && content.operators.length > 0 ? content.operators : ['+', '-']) as ('+' | '-' | '*' | '/')[];
+    const count = (content?.numberOfOperations || 2) as 1 | 2 | 3 | 4;
+    const range = (content?.digitRange || 100) as 10 | 100 | 1000;
+    const carry = content?.allowCarryOrRemainder || false;
+    return generateMathProblems(ops, count, range, carry);
+  });
+  const [answers, setAnswers] = useState<string[]>(() => Array(problems.length).fill(''));
   const [submitted, setSubmitted] = useState(false);
   const [activeInputIdx, setActiveInputIdx] = useState<number>(0);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  useEffect(() => {
-    // If problems were pre-generated in content, use them; otherwise generate safely
-    if (content?.generatedProblems && content.generatedProblems.length > 0) {
-      setProblems(content.generatedProblems);
-      setAnswers(Array(content.generatedProblems.length).fill(''));
-    } else {
-      const ops = (content?.operators && content.operators.length > 0 ? content.operators : ['+', '-']) as ('+' | '-' | '*' | '/')[];
-      const count = (content?.numberOfOperations || 2) as 1 | 2 | 3 | 4;
-      const range = (content?.digitRange || 100) as 10 | 100 | 1000;
-      const carry = content?.allowCarryOrRemainder || false;
-
-      const proms = generateMathProblems(ops, count, range, carry);
-      setProblems(proms);
-      setAnswers(Array(proms.length).fill(''));
-    }
-  }, [content]);
 
   // Focus first input automatically
   useEffect(() => {

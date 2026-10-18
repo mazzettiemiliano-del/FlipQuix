@@ -13,14 +13,10 @@ export const OrderCellsPlayer: React.FC<OrderCellsPlayerProps> = ({
   onAnswer,
   disabled = false
 }) => {
-  const [items, setItems] = useState<{ id: string; text: string; image?: string }[]>([]);
+  const [items, setItems] = useState<{ id: string; text: string; image?: string }[]>(() => {
+    return [...content.correctOrder].sort(() => Math.random() - 0.5);
+  });
   const [submitted, setSubmitted] = useState(false);
-
-  // Initialize shuffled items
-  useEffect(() => {
-    const shuffled = [...content.correctOrder].sort(() => Math.random() - 0.5);
-    setItems(shuffled);
-  }, [content]);
 
   const moveItem = (index: number, direction: 'up' | 'down') => {
     if (disabled || submitted) return;

@@ -21,84 +21,41 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
   const size = content.gridSize || 2; // 2x2 = 4 tiles, or 3x3 = 9 tiles
   const totalTiles = size * size;
 
-  const [bank, setBank] = useState<TileItem[]>([]);
-  const [placedSlots, setPlacedSlots] = useState<(TileItem | null)[]>(
-    Array(totalTiles).fill(null)
-  );
-  const [selectedBankTile, setSelectedBankTile] = useState<TileItem | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [draggedTile, setDraggedTile] = useState<TileItem | null>(null);
 
-  useEffect(() => {
-    const tiles: TileItem[] = Array.from({ length: totalTiles }, (_, i) => ({
-      id: i,
-      originalPos: i
-    }));
-    // Shuffle tiles
-    const shuffled = [...tiles].sort(() => Math.random() - 0.5);
-    setBank(shuffled);
-    setPlacedSlots(Array(totalTiles).fill(null));
-    setSelectedBankTile(null);
-  }, [content, totalTiles]);
-
-  const handleBankTileClick = (tile: TileItem) => {
+  const handleDragStart = (e: React.DragEvent, tile: TileItem) => {
     if (disabled || submitted) return;
-    // Find first empty slot in target grid and place it, or select it
-    const emptyIndex = placedSlots.findIndex((s) => s === null);
-    if (emptyIndex !== -1) {
-      const nextSlots = [...placedSlots];
-      nextSlots[emptyIndex] = tile;
-      setPlacedSlots(nextSlots);
-      setBank((prev) => prev.filter((t) => t.id !== tile.id));
-      setSelectedBankTile(null);
-    }
+    setDraggedTile(tile);
+    e.dataTransfer.setData('text/plain', String(tile.id));
   };
 
-  const handleSlotClick = (index: number) => {
-    if (disabled || submitted) return;
-    const tile = placedSlots[index];
-    if (tile) {
-      // Remove from slot and return to bank
-      const nextSlots = [...placedSlots];
-      nextSlots[index] = null;
-      setPlacedSlots(nextSlots);
-      setBank((prev) => [...prev, tile]);
-    }
+  const handleDropOnSlot = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (disabled || submitted || !draggedTile) return;
+
+    // Place dragged tile into slot
+    const nextSlots = [...placedSlots];
+    const prevTileInSlot = nextSlots[index];
+    nextSlots[index] = draggedTile;
+    setPlacedSlots(nextSlots);
+
+    // Remove from bank and return previous tile if any
+    setBank((prev) => {
+      const filtered = prev.filter((t) => t.id !== draggedTile.id);
+      return prevTileInSlot ? [...filtered, prevTileInSlot] : filtered;
+    });
+    setDraggedTile(null);
   };
 
-  const handleReset = () => {
-    if (disabled || submitted) return;
-    const all = [...bank, ...placedSlots.filter((s): s is TileItem => s !== null)];
-    setBank(all);
-    setPlacedSlots(Array(totalTiles).fill(null));
-  };
-
-  const handleConfirm = () => {
-    if (disabled || submitted || placedSlots.some((s) => s === null)) return;
-    setSubmitted(true);
-
-    const isCorrect = placedSlots.every((tile, idx) => tile && tile.originalPos === idx);
-    onAnswer(isCorrect, { isCorrect });
-  };
-
-  const getTileStyle = (originalPos: number) => {
-    const row = Math.floor(originalPos / size);
-    const col = originalPos % size;
-    const step = 100 / (size - 1 || 1);
-    const posX = col * step;
-    const posY = row * step;
-
-    return {
-      backgroundImage: `url(${content.imageUrl})`,
-      backgroundSize: `${size * 100}% ${size * 100}%`,
-      backgroundPosition: `${posX}% ${posY}%`
-    };
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
   };
 
   return (
     <div className="w-full max-w-3xl mx-auto flex flex-col gap-6">
       <div className="text-center">
         <p className="text-sm font-semibold text-indigo-400 uppercase tracking-wider">
-          Ricostruisci l'immagine nella griglia vuota a destra
+          Trascina o tocca le tessere per ricostruire l'immagine
         </p>
       </div>
 
@@ -106,7 +63,7 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
         {/* Disordered Bank Grid */}
         <div className="flex flex-col items-center gap-3 bg-slate-800/80 p-5 rounded-3xl border border-slate-700">
           <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
-            1. Tessere in disordine (tocca per posizionare)
+            1. Tessere in disordine (Trascina o tocca)
           </span>
 
           <div
@@ -117,18 +74,14 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
             }}
           >
             {bank.map((tile) => (
-              <button
+              <div
                 key={tile.id}
-                type="button"
-                disabled={disabled || submitted}
+                draggable={!disabled && !submitted}
+                onDragStart={(e) => handleDragStart(e, tile)}
                 onClick={() => handleBankTileClick(tile)}
-                className="w-full h-full rounded-xl border border-white/20 shadow-md overflow-hidden hover:scale-105 active:scale-95 transition-transform cursor-pointer relative"
+                className="w-full h-full rounded-xl border border-white/20 shadow-md overflow-hidden hover:scale-105 active:scale-95 transition-transform cursor-grab active:cursor-grabbing relative"
                 style={getTileStyle(tile.originalPos)}
-              >
-                <span className="absolute bottom-1 right-1 bg-black/60 text-[10px] text-white px-1 rounded font-bold">
-                  #{tile.id + 1}
-                </span>
-              </button>
+              />
             ))}
             {bank.length === 0 && (
               <div className="col-span-full row-span-full flex items-center justify-center text-xs text-emerald-400 font-semibold">
@@ -165,6 +118,8 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
             {placedSlots.map((tile, idx) => (
               <div
                 key={idx}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDropOnSlot(e, idx)}
                 onClick={() => handleSlotClick(idx)}
                 className={`w-full h-full rounded-xl border transition-all flex items-center justify-center ${
                   tile
@@ -172,9 +127,7 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
                     : 'border-slate-800 bg-slate-900/60'
                 }`}
                 style={tile ? getTileStyle(tile.originalPos) : {}}
-              >
-                {!tile && <span className="text-xs font-black text-slate-700">{idx + 1}</span>}
-              </div>
+              />
             ))}
           </div>
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { FillBlanksContent } from '../../types/quiz';
-import { CheckCircle2, ChevronDown } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 interface FillBlanksPlayerProps {
   content: FillBlanksContent;
@@ -15,32 +15,97 @@ export const FillBlanksPlayer: React.FC<FillBlanksPlayerProps> = ({
   onAnswer,
   disabled = false
 }) => {
-  const [selectedWord, setSelectedWord] = useState<string>('');
+  // Normalize blanks: support either content.blanks array or single blankWord
+  const blanksList = useMemo(() => {
+    if (content.blanks && content.blanks.length > 0) {
+      return content.blanks;
+    }
+    return [
+      {
+        id: 'blank-1',
+        correctWord: content.blankWord || '',
+        distractors: content.distractors || []
+      }
+    ];
+  }, [content]);
+
+  // Selected word for each blank id
+  const [selectedWords, setSelectedWords] = useState<Record<string, string>>({});
+  const [activeBlankId, setActiveBlankId] = useState<string>(blanksList[0]?.id || 'blank-1');
   const [submitted, setSubmitted] = useState(false);
 
-  // Shuffle correct word + distractors
-  const shuffledChoices = useMemo(() => {
-    const list = [content.blankWord, ...content.distractors];
-    return [...list].sort(() => Math.random() - 0.5);
-  }, [content]);
+  const currentBlank = blanksList.find((b) => b.id === activeBlankId) || blanksList[0];
 
-  const parts = useMemo(() => {
-    // Split the text around the blank word
-    const regex = new RegExp(`\\b${content.blankWord}\\b`, 'i');
-    const match = content.originalText.match(regex);
-    if (!match || match.index === undefined) {
-      return [content.originalText, ''];
+  const shuffledChoices = useMemo(() => {
+    if (!currentBlank) return [];
+    const list = [currentBlank.correctWord, ...(currentBlank.distractors || [])];
+    return [...list].sort(() => Math.random() - 0.5);
+  }, [currentBlank]);
+
+  const handleSelectWord = (word: string) => {
+    if (disabled || submitted) return;
+    setSelectedWords((prev) => ({
+      ...prev,
+      [activeBlankId]: word
+    }));
+
+    // Automatically advance to next unfilled blank if any
+    const nextUnfilled = blanksList.find((b) => !selectedWords[b.id] && b.id !== activeBlankId);
+    if (nextUnfilled) {
+      setActiveBlankId(nextUnfilled.id);
     }
-    const before = content.originalText.slice(0, match.index);
-    const after = content.originalText.slice(match.index + content.blankWord.length);
-    return [before, after];
-  }, [content]);
+  };
+
+  const isComplete = blanksList.every((b) => selectedWords[b.id] && selectedWords[b.id].trim() !== '');
 
   const handleConfirm = () => {
-    if (disabled || submitted || !selectedWord) return;
+    if (disabled || submitted || !isComplete) return;
     setSubmitted(true);
-    const isCorrect = selectedWord.trim().toLowerCase() === content.blankWord.trim().toLowerCase();
-    onAnswer(isCorrect, { selectedWord });
+
+    const isAllCorrect = blanksList.every(
+      (b) =>
+        (selectedWords[b.id] || '').trim().toLowerCase() === b.correctWord.trim().toLowerCase()
+    );
+
+    onAnswer(isAllCorrect, { selectedWords });
+  };
+
+  // Split text by placeholders or render text with interactive blank slots
+  const renderSentenceWithBlanks = () => {
+    // If originalText contains [...] or similar, split by them
+    const segments = content.originalText.split(/\[\.\.\.\]|\{\{|\}\}/g);
+
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-2 text-xl md:text-2xl font-semibold text-slate-100 leading-relaxed">
+        {segments.map((seg, idx) => {
+          const blankItem = blanksList[idx];
+          const chosen = blankItem ? selectedWords[blankItem.id] : null;
+          const isActive = blankItem?.id === activeBlankId;
+
+          return (
+            <React.Fragment key={idx}>
+              <span>{seg}</span>
+              {blankItem && (
+                <button
+                  type="button"
+                  disabled={disabled || submitted}
+                  onClick={() => setActiveBlankId(blankItem.id)}
+                  className={`px-4 py-2 rounded-xl border-2 font-black transition-all cursor-pointer shadow-inner mx-1 ${
+                    isActive
+                      ? 'border-amber-400 bg-amber-500/30 text-amber-300 ring-4 ring-amber-400/40 scale-105'
+                      : chosen
+                      ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
+                      : 'border-dashed border-slate-500 bg-slate-900 text-slate-400 hover:border-amber-400'
+                  }`}
+                >
+                  {chosen || `[ Buco ${idx + 1} ]`}
+                </button>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -52,56 +117,52 @@ export const FillBlanksPlayer: React.FC<FillBlanksPlayerProps> = ({
       )}
 
       {/* Interactive Sentence Card */}
-      <div className="p-8 rounded-3xl bg-slate-800/90 border-2 border-indigo-500/40 shadow-2xl text-center leading-relaxed">
-        <span className="text-xl md:text-2xl font-semibold text-slate-200">
-          {parts[0]}
-        </span>
-
-        {/* Blank slot */}
-        <span className="inline-flex items-center mx-2 px-4 py-1.5 rounded-xl bg-amber-400/20 border-2 border-dashed border-amber-400 text-amber-300 font-extrabold text-xl md:text-2xl min-w-[120px] justify-center shadow-inner">
-          {selectedWord ? selectedWord : '______'}
-        </span>
-
-        <span className="text-xl md:text-2xl font-semibold text-slate-200">
-          {parts[1]}
-        </span>
+      <div className="p-8 rounded-3xl bg-slate-800/90 border-2 border-indigo-500/40 shadow-2xl text-center">
+        <p className="text-xs uppercase font-extrabold tracking-widest text-indigo-300 mb-4">
+          Completa i buchi scegliendo le parole corrette:
+        </p>
+        {renderSentenceWithBlanks()}
       </div>
 
-      {/* Choice Chips / Dropdown Selection */}
-      <div className="space-y-3">
-        <label className="text-sm font-bold text-slate-400 block text-center">
-          Scegli la parola corretta per completare la frase:
-        </label>
-        <div className="grid grid-cols-2 gap-3.5">
-          {shuffledChoices.map((choice, idx) => {
-            const isSelected = selectedWord === choice;
-            return (
-              <button
-                key={idx}
-                type="button"
-                disabled={disabled || submitted}
-                onClick={() => setSelectedWord(choice)}
-                className={`p-4 rounded-2xl font-bold text-lg md:text-xl transition-all shadow-md text-center ${
-                  isSelected
-                    ? 'bg-amber-500 text-slate-950 ring-4 ring-amber-300 scale-102 font-black'
-                    : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
-                }`}
-              >
-                {choice}
-              </button>
-            );
-          })}
+      {/* Choice Chips for Active Blank */}
+      {currentBlank && (
+        <div className="space-y-3 bg-slate-900 border border-slate-800 p-5 rounded-3xl shadow-xl">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-400 px-1">
+            <span>Scegli per: <strong className="text-amber-300">Buco ({blanksList.findIndex(b => b.id === currentBlank.id) + 1})</strong></span>
+            <span className="text-emerald-400">{Object.keys(selectedWords).length} di {blanksList.length} completati</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {shuffledChoices.map((choice, idx) => {
+              const isSelected = selectedWords[currentBlank.id] === choice;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={disabled || submitted}
+                  onClick={() => handleSelectWord(choice)}
+                  className={`p-3.5 rounded-2xl font-bold text-base md:text-lg transition-all shadow-md text-center cursor-pointer ${
+                    isSelected
+                      ? 'bg-amber-500 text-slate-950 ring-4 ring-amber-300 font-black scale-102'
+                      : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                  }`}
+                >
+                  {choice}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       <button
         type="button"
-        disabled={disabled || submitted || !selectedWord}
+        disabled={disabled || submitted || !isComplete}
         onClick={handleConfirm}
-        className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-40 text-white shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-98"
+        className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-40 text-white shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-98 cursor-pointer"
       >
         <CheckCircle2 className="w-6 h-6" />
-        {submitted ? 'Risposta Registrata' : 'Conferma Parola'}
+        {submitted ? 'Risposte Registrate' : 'Conferma Tutte le Risposte'}
       </button>
     </div>
   );

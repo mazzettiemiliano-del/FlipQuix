@@ -121,6 +121,47 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
     return () => clearInterval(interval);
   }, [roomState.phase, roomState.currentQuestionIndex, currentQ, soundEnabled]);
 
+  // Auto terminate question timer when all players have answered
+  useEffect(() => {
+    if (roomState.phase === 'question_active' && playersList.length > 0 && currentQ?.type !== 'draw_vote') {
+      if (answersList.length >= playersList.length) {
+        onEndQuestionTimerNow();
+      }
+    }
+  }, [answersList.length, playersList.length, roomState.phase]);
+
+  const renderCorrectAnswerSummary = () => {
+    if (!currentQ) return null;
+    let text = '';
+    if (currentQ.type === 'multiple_choice') {
+      const corr = (currentQ.content as any).options?.find((o: any) => o.isCorrect);
+      text = corr ? corr.text : '';
+    } else if (currentQ.type === 'true_false') {
+      text = (currentQ.content as any).isTrueCorrect ? 'Vero' : 'Falso';
+    } else if (currentQ.type === 'open_short') {
+      text = (currentQ.content as any).acceptedAnswers?.join(', ');
+    } else if (currentQ.type === 'fill_blanks') {
+      const c = currentQ.content as any;
+      text = c.blankWord || c.blanks?.map((b: any) => b.correctWord).join(', ');
+    } else if (currentQ.type === 'anagram') {
+      text = (currentQ.content as any).phraseOrWord;
+    } else if (currentQ.type === 'math_challenge') {
+      text = (currentQ.content as any).generatedProblems?.map((p: any) => `${p.equation} = ${p.answer}`).join('; ');
+    } else if (currentQ.type === 'word_search') {
+      text = (currentQ.content as any).words?.join(', ');
+    } else if (currentQ.type === 'order_cells') {
+      text = (currentQ.content as any).correctOrder?.map((o: any) => o.text).join(' → ');
+    } else if (currentQ.type === 'cell_identify') {
+      text = (currentQ.content as any).cells?.filter((c: any) => c.isMatch).map((c: any) => c.text).join(', ');
+    }
+    return text ? (
+      <div className="p-4 bg-emerald-500/15 border border-emerald-500/40 rounded-2xl text-center space-y-1">
+        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">Risposta Corretta</span>
+        <span className="text-xl font-black text-white">{text}</span>
+      </div>
+    ) : null;
+  };
+
   // Ranked leaderboard
   const sortedPlayers = [...playersList].sort((a, b) => b.score - a.score);
 
@@ -266,28 +307,6 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
                 </span>
               </div>
 
-              {/* Bot Simulation Tool */}
-              <div className="mt-6 w-full pt-4 border-t border-slate-800 flex flex-col gap-2">
-                <span className="text-xs text-slate-400 font-bold">
-                  Test rapido in classe / simulazione:
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => onAddSimulatedStudents(3)}
-                    className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-xs font-bold text-slate-200 border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5 text-indigo-400" />
-                    +3 Studenti Bot
-                  </button>
-                  <button
-                    onClick={() => onAddSimulatedStudents(6)}
-                    className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-xs font-bold text-slate-200 border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5 text-indigo-400" />
-                    +6 Studenti Bot
-                  </button>
-                </div>
-              </div>
             </div>
 
             {/* Right Column: Question Repository & Start */}
@@ -588,6 +607,56 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
               </p>
             </div>
 
+            {/* Correct Answer & User Submissions Sharing */}
+            <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl space-y-6">
+              {renderCorrectAnswerSummary()}
+
+              <div>
+                <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 text-left">
+                  Risposte di tutti i partecipanti ({answersList.length} su {playersList.length}):
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
+                  {playersList.map((player) => {
+                    const sub = roomState.answersThisTurn[player.id];
+                    return (
+                      <div
+                        key={player.id}
+                        className={`p-3.5 rounded-2xl border flex items-center justify-between ${
+                          sub
+                            ? sub.isCorrect
+                              ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-200'
+                              : 'bg-rose-500/10 border-rose-500/40 text-rose-200'
+                            : 'bg-slate-950 border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">{player.avatar}</span>
+                          <span className="font-bold text-sm text-white">{player.name}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {sub ? (
+                            <>
+                              <span className="text-xs font-semibold">
+                                {sub.isCorrect ? 'Corretta' : 'Errata'} ({sub.timeSpent?.toFixed(1) || '0'}s)
+                              </span>
+                              {sub.isCorrect ? (
+                                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                              ) : (
+                                <XCircle className="w-4 h-4 text-rose-400" />
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs italic text-slate-500">Non ha risposto</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
             {/* Fastest Fingers 3 Bonus Podium */}
             <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl">
               <div className="flex items-center justify-center gap-2 mb-6">
@@ -786,6 +855,35 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Other Participants Below Podium */}
+            {sortedPlayers.length > 3 && (
+              <div className="w-full max-w-xl bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3 shadow-xl">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest text-left">
+                  Altri Partecipanti in Classifica
+                </h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {sortedPlayers.slice(3).map((player, idx) => (
+                    <div
+                      key={player.id}
+                      className="p-3 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-6 h-6 rounded-lg bg-slate-800 text-slate-400 font-bold text-xs flex items-center justify-center">
+                          {idx + 4}°
+                        </span>
+                        <span className="font-bold text-sm text-white">
+                          {player.avatar} {player.name}
+                        </span>
+                      </div>
+                      <span className="font-black text-amber-300 text-sm">
+                        {player.score} pt
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <button
               onClick={onResetGame}

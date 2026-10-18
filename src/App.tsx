@@ -72,22 +72,6 @@ export default function App() {
         streak: 2,
         avatar: '🚀',
         isSimulated: true
-      },
-      'player-demo-2': {
-        id: 'player-demo-2',
-        name: 'Giulia V.',
-        score: 95,
-        streak: 1,
-        avatar: '🦊',
-        isSimulated: true
-      },
-      'player-demo-3': {
-        id: 'player-demo-3',
-        name: 'Sofia M.',
-        score: 140,
-        streak: 3,
-        avatar: '🌟',
-        isSimulated: true
       }
     },
     answersThisTurn: {},
@@ -97,13 +81,6 @@ export default function App() {
         playerName: 'Marco R.',
         dataUrl:
           'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=80',
-        votes: ['player-demo-2']
-      },
-      'player-demo-2': {
-        playerId: 'player-demo-2',
-        playerName: 'Giulia V.',
-        dataUrl:
-          'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=500&auto=format&fit=crop&q=80',
         votes: []
       }
     },

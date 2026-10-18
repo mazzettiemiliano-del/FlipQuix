@@ -25,13 +25,7 @@ export const WordSearchPlayer: React.FC<WordSearchPlayerProps> = ({
     [content]
   );
 
-  const [grid, setGrid] = useState<string[][]>([]);
-  const [selectedCoords, setSelectedCoords] = useState<{ r: number; c: number }[]>([]);
-  const [foundWords, setFoundWords] = useState<string[]>([]);
-  const [foundCoords, setFoundCoords] = useState<{ r: number; c: number; word: string }[]>([]);
-
-  // Build grid with words + random filler letters
-  useEffect(() => {
+  const [grid, setGrid] = useState<string[][]>(() => {
     const letters = 'ABCDEFGHILMNOPQRSTUVZ';
     const matrix: string[][] = Array.from({ length: gridSize }, () =>
       Array.from({ length: gridSize }, () => '')
@@ -49,7 +43,6 @@ export const WordSearchPlayer: React.FC<WordSearchPlayerProps> = ({
           const maxCol = gridSize - word.length;
           if (maxCol >= 0) {
             const col = Math.floor(Math.random() * (maxCol + 1));
-            // Check if fits
             let fits = true;
             for (let i = 0; i < word.length; i++) {
               if (matrix[row][col + i] !== '' && matrix[row][col + i] !== word[i]) {
@@ -95,12 +88,11 @@ export const WordSearchPlayer: React.FC<WordSearchPlayerProps> = ({
         }
       }
     }
-
-    setGrid(matrix);
-    setFoundWords([]);
-    setFoundCoords([]);
-    setSelectedCoords([]);
-  }, [content, gridSize, wordsToFind]);
+    return matrix;
+  });
+  const [selectedCoords, setSelectedCoords] = useState<{ r: number; c: number }[]>([]);
+  const [foundWords, setFoundWords] = useState<string[]>([]);
+  const [foundCoords, setFoundCoords] = useState<{ r: number; c: number; word: string }[]>([]);
 
   const toggleSelect = (r: number, c: number) => {
     if (disabled) return;

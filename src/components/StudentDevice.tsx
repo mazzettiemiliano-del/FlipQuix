@@ -78,7 +78,7 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
   const isMyOwnQuestion =
     currentQ && activePlayer && currentQ.creatorName === activePlayer.name;
 
-  // Countdown timer when question is active
+  // Countdown timer when question is active (silent on student device)
   useEffect(() => {
     if (roomState.phase !== 'question_active' || !currentQ) return;
 
@@ -88,11 +88,6 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
         if (prev <= 1) {
           clearInterval(interval);
           return 0;
-        }
-        if (prev <= 5 && prev > 1) {
-          sound.playUrgentTick();
-        } else {
-          sound.playTick();
         }
         return prev - 1;
       });
@@ -377,7 +372,7 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
             roomState.drawingsThisTurn && roomState.drawingsThisTurn[activePlayer.id] ? (
               <div className="p-4 bg-emerald-500/20 border-2 border-emerald-500/60 rounded-2xl text-center text-sm font-black text-emerald-300 flex items-center justify-center gap-2 shadow-xl">
                 <CheckCircle className="w-5 h-5 text-emerald-400 stroke-[3]" />
-                <span>Disegno salvato con successo! Puoi ritoccarlo fino allo scadere del tempo.</span>
+                <span>Disegno inviato con successo! In attesa degli altri partecipanti...</span>
               </div>
             ) : (
               <div className="text-center text-xs text-slate-400">
