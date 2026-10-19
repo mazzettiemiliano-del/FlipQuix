@@ -44,7 +44,7 @@ interface TeacherMonitorProps {
   onTerminateGame: () => void;
   onUpdateQuestionPointsAndTime: (qId: string | 'all', points: number, timeLimit: number) => void;
   onDeleteQuestion: (qId: string) => void;
-  onAddSimulatedStudents: (count: number) => void;
+  onAddSimulatedStudents: (count: number, botName?: string) => void;
   onToggleSound: () => void;
   onResetGame: () => void;
   onWipeDatabase: () => void;
@@ -121,14 +121,29 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
     return () => clearInterval(interval);
   }, [roomState.phase, roomState.currentQuestionIndex, currentQ, soundEnabled]);
 
-  // Auto terminate question timer when all players have answered
+  // Auto terminate question timer when ALL connected players have answered for this turn
   useEffect(() => {
-    if (roomState.phase === 'question_active' && playersList.length > 0 && currentQ?.type !== 'draw_vote') {
-      if (answersList.length >= playersList.length) {
+    if (
+      roomState.phase === 'question_active' &&
+      playersList.length > 0 &&
+      currentQ?.type !== 'draw_vote' &&
+      currentQ?.type !== 'word_builder'
+    ) {
+      const allConnectedHaveAnswered =
+        playersList.length > 0 &&
+        playersList.every((p) => {
+          const ans = roomState.answersThisTurn && roomState.answersThisTurn[p.id];
+          return (
+            ans &&
+            (!roomState.turnStartTime || ans.submittedAt >= roomState.turnStartTime - 1500)
+          );
+        });
+
+      if (allConnectedHaveAnswered) {
         onEndQuestionTimerNow();
       }
     }
-  }, [answersList.length, playersList.length, roomState.phase]);
+  }, [answersList.length, playersList.length, roomState.phase, roomState.turnStartTime, currentQ?.type]);
 
   const renderCorrectAnswerSummary = () => {
     if (!currentQ) return null;
@@ -387,11 +402,34 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
                 )}
               </div>
 
-              {/* Connected Students List */}
-              <div className="pt-4 border-t border-slate-800">
-                <span className="text-xs font-bold text-slate-400 block mb-2">
-                  Studenti collegati in classe ({playersList.length}):
-                </span>
+              {/* Connected Students List & Add Bot Controls */}
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-400 block">
+                    Studenti collegati in classe ({playersList.length}):
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onAddSimulatedStudents(1, 'Cazzullo')}
+                      className="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 rounded-xl text-xs font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                      title="Aggiungi il bot Cazzullo"
+                    >
+                      <span>🦉</span>
+                      <span>+ Bot Cazzullo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onAddSimulatedStudents(3)}
+                      className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                      title="Aggiungi compagni di classe simulati"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>+ 3 Bot Compagni</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap gap-2">
                   {playersList.map((p) => (
                     <div
@@ -400,11 +438,12 @@ export const TeacherMonitor: React.FC<TeacherMonitorProps> = ({
                     >
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                       {p.avatar} {p.name}
+                      {p.isSimulated && <span className="text-[10px] text-slate-400 font-mono">(Bot)</span>}
                     </div>
                   ))}
                   {playersList.length === 0 && (
                     <span className="text-xs text-slate-500 italic">
-                      In attesa degli studenti...
+                      In attesa degli studenti... (inquadra il QR code oppure clicca su "+ Bot Cazzullo")
                     </span>
                   )}
                 </div>

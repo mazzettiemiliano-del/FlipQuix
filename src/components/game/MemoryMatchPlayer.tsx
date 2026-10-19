@@ -24,14 +24,24 @@ export const MemoryMatchPlayer: React.FC<MemoryMatchPlayerProps> = ({
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [matches, setMatches] = useState<{ imageId: string; textId: string }[]>([]);
 
-  // Shuffle order of images and texts
+  const pairsKey = (content.pairs || []).map((p) => p.id).join('-');
+
+  // Shuffle order of images and texts deterministically once per pair set
   const shuffledImages = useMemo(() => {
-    return [...content.pairs].sort(() => Math.random() - 0.5);
-  }, [content]);
+    return [...(content.pairs || [])].sort((a, b) => {
+      const codeA = (a.id.charCodeAt(0) * 19 + a.text.length * 7) % 31;
+      const codeB = (b.id.charCodeAt(0) * 19 + b.text.length * 7) % 31;
+      return codeA - codeB || a.id.localeCompare(b.id);
+    });
+  }, [pairsKey]);
 
   const shuffledTexts = useMemo(() => {
-    return [...content.pairs].sort(() => Math.random() - 0.5);
-  }, [content]);
+    return [...(content.pairs || [])].sort((a, b) => {
+      const codeA = (a.text.charCodeAt(0) * 23 + a.id.length * 11) % 31;
+      const codeB = (b.text.charCodeAt(0) * 23 + b.id.length * 11) % 31;
+      return codeA - codeB || a.id.localeCompare(b.id);
+    });
+  }, [pairsKey]);
 
   const handleImageClick = (id: string) => {
     if (disabled || matches.some((m) => m.imageId === id)) return;

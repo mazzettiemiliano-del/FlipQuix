@@ -21,12 +21,16 @@ export const AnagramPlayer: React.FC<AnagramPlayerProps> = ({
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    // Generate unique objects for each character and shuffle
-    const letterItems = targetChars.map((c, i) => ({ id: `char-${i}-${c}`, char: c }));
-    const shuffled = [...letterItems].sort(() => Math.random() - 0.5);
+    // Generate unique objects for each character and shuffle once per target word
+    const letterItems = targetChars.map((c, idx) => ({ id: `char-${idx}-${c}`, char: c }));
+    const shuffled = [...letterItems].sort((a, b) => {
+      const codeA = (a.char.charCodeAt(0) * 17 + a.id.length * 31) % 97;
+      const codeB = (b.char.charCodeAt(0) * 17 + b.id.length * 31) % 97;
+      return codeA - codeB || a.id.localeCompare(b.id);
+    });
     setBank(shuffled);
     setSlots([]);
-  }, [content]);
+  }, [content.phraseOrWord]);
 
   const selectTile = (item: { id: string; char: string }) => {
     if (disabled || submitted) return;

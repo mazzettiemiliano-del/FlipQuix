@@ -64,26 +64,9 @@ export default function App() {
     phase: 'lobby',
     currentQuestionIndex: 0,
     questions: INITIAL_QUESTIONS,
-    players: {
-      'player-demo-1': {
-        id: 'player-demo-1',
-        name: 'Marco R.',
-        score: 120,
-        streak: 2,
-        avatar: '🚀',
-        isSimulated: true
-      }
-    },
+    players: {},
     answersThisTurn: {},
-    drawingsThisTurn: {
-      'player-demo-1': {
-        playerId: 'player-demo-1',
-        playerName: 'Marco R.',
-        dataUrl:
-          'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=80',
-        votes: []
-      }
-    },
+    drawingsThisTurn: {},
     turnStartTime: 0,
     turnDuration: 25,
     settings: {
@@ -165,11 +148,46 @@ export default function App() {
 
     const unsubFirebase = firebaseSync.listenToRoom(roomState.roomCode, (firebaseState) => {
       setRoomState((prev) => {
-        // Preserve local student player if present
+        // Detect database wipe or full reset
+        const isWiped =
+          (firebaseState.resetEpoch && firebaseState.resetEpoch !== prev.resetEpoch) ||
+          (firebaseState.phase === 'lobby' && Object.keys(firebaseState.players || {}).length === 0 && Object.keys(prev.players || {}).length > 0);
+
+        if (isWiped) {
+          try {
+            localStorage.removeItem('flipquiz_my_player');
+            localStorage.removeItem('flipquiz_custom_config');
+          } catch (e) {}
+          setMyPlayer(null);
+          setMyPlayerId('');
+          return {
+            ...firebaseState,
+            players: {},
+            answersThisTurn: {},
+            drawingsThisTurn: {}
+          };
+        }
+
         let mergedPlayers = { ...(firebaseState.players || {}) };
+        // If myPlayer was removed from database (e.g. wiped), disconnect and return to login
+        if (myPlayer && Object.keys(firebaseState.players || {}).length === 0) {
+          try {
+            localStorage.removeItem('flipquiz_my_player');
+          } catch (e) {}
+          setMyPlayer(null);
+          setMyPlayerId('');
+          return {
+            ...firebaseState,
+            players: {},
+            answersThisTurn: {},
+            drawingsThisTurn: {}
+          };
+        }
+
         if (myPlayer && !mergedPlayers[myPlayer.id]) {
           mergedPlayers[myPlayer.id] = myPlayer;
         }
+
         return {
           ...firebaseState,
           players: mergedPlayers,
@@ -299,15 +317,19 @@ export default function App() {
     payload?: any
   ) => {
     setRoomState((prev) => {
-      // Don't register twice
-      if (prev.answersThisTurn[playerId]) return prev;
-
       const currentQ = prev.questions[prev.currentQuestionIndex];
+      const isWordBuilder = currentQ && currentQ.type === 'word_builder';
+      const existingSubmission = prev.answersThisTurn[playerId];
+
+      // For standard questions, don't allow duplicate submissions.
+      // For word_builder, allow continuous updates as new words are found.
+      if (existingSubmission && !isWordBuilder) return prev;
+
       const basePoints = currentQ ? currentQ.points : 50;
 
       // Count previous correct answers to calculate speed rank (1st, 2nd, 3rd)
       const prevCorrectCount = Object.values(prev.answersThisTurn).filter(
-        (a) => a.isCorrect
+        (a) => a.isCorrect && a.playerId !== playerId
       ).length;
 
       let speedRank: number | undefined = undefined;
@@ -326,7 +348,13 @@ export default function App() {
         }
       }
 
-      const pointsAwarded = isCorrect ? basePoints + bonus : 0;
+      // For word_builder: points = basePoints + (total guessed words * 10) + speed bonus
+      const wordCount = isWordBuilder && payload?.count ? payload.count : (payload?.words?.length || 1);
+      const wordBonus = isWordBuilder ? wordCount * 10 : 0;
+      const pointsAwarded = isCorrect ? basePoints + wordBonus + bonus : 0;
+
+      const previousPoints = existingSubmission ? existingSubmission.pointsAwarded : 0;
+      const scoreDelta = pointsAwarded - previousPoints;
 
       const submission: AnswerSubmission = {
         playerId,
@@ -335,7 +363,7 @@ export default function App() {
         isCorrect,
         timeSpent,
         pointsAwarded,
-        speedRank,
+        speedRank: existingSubmission?.speedRank || speedRank,
         answerPayload: payload
       };
 
@@ -358,8 +386,8 @@ export default function App() {
         ...prev.players,
         [playerId]: {
           ...existingPlayer,
-          score: existingPlayer.score + pointsAwarded,
-          streak: isCorrect ? existingPlayer.streak + 1 : 0
+          score: Math.max(0, existingPlayer.score + scoreDelta),
+          streak: isCorrect ? existingPlayer.streak + (existingSubmission ? 0 : 1) : 0
         }
       };
 
@@ -375,7 +403,7 @@ export default function App() {
       firebaseSync.submitAnswer(
         prev.roomCode,
         submission,
-        pointsAwarded,
+        scoreDelta,
         isCorrect
       );
 
@@ -661,17 +689,19 @@ export default function App() {
     if (timerRef.current) clearTimeout(timerRef.current);
     clearBotTimeouts();
 
+    const freshEpoch = Date.now();
     const freshState: RoomState = {
       roomCode: roomState.roomCode,
       roomName: roomState.roomName || 'FlipQuiz Classe Live',
       phase: 'lobby',
       currentQuestionIndex: 0,
-      questions: INITIAL_QUESTIONS,
+      questions: [],
       players: {},
       answersThisTurn: {},
       drawingsThisTurn: {},
       turnStartTime: 0,
       turnDuration: 25,
+      resetEpoch: freshEpoch,
       settings: {
         basePoints: 50,
         fastFingerBonus1: 20,
@@ -682,8 +712,21 @@ export default function App() {
       }
     };
 
+    // 1. Clear local storage for current student session
+    try {
+      localStorage.removeItem('flipquiz_my_player');
+      localStorage.removeItem('flipquiz_custom_config');
+    } catch (e) {}
+
+    // 2. Disconnect local student
+    setMyPlayer(null);
+    setMyPlayerId('');
+
+    // 3. Set room state locally and broadcast
     setRoomState(freshState);
     api.broadcastLocal(freshState);
+
+    // 4. Wipe completely from Firebase RTDB
     firebaseSync.wipeRoomDatabase(roomState.roomCode, freshState);
     api.resetGame();
   };
@@ -702,24 +745,36 @@ export default function App() {
     });
   };
 
-  // Teacher adding simulated classmate bots
-  const handleAddSimulatedStudents = (count: number) => {
-    const names = ['Matteo P.', 'Federica S.', 'Lorenzo B.', 'Elena D.', 'Davide M.', 'Chiara L.'];
-    const avatars = ['🚀', '🦊', '🌟', '⚡', '🐼', '🎨'];
+  // Teacher adding simulated classmate bots (including Cazzullo)
+  const handleAddSimulatedStudents = (count: number, botName?: string) => {
+    const names = ['Cazzullo', 'Matteo P.', 'Federica S.', 'Lorenzo B.', 'Elena D.', 'Davide M.', 'Chiara L.'];
+    const avatars = ['🦉', '🚀', '🦊', '🌟', '⚡', '🐼', '🎨'];
     const newBots: Record<string, Player> = {};
 
-    for (let i = 0; i < count; i++) {
-      const id = `bot-${Date.now()}-${i}`;
-      const name = names[i % names.length];
-      const avatar = avatars[i % avatars.length];
+    if (botName) {
+      const id = `bot-${botName.toLowerCase().replace(/[^a-z0-9]/g, '')}-${Date.now()}`;
       newBots[id] = {
         id,
-        name,
-        avatar,
-        score: Math.floor(Math.random() * 80) + 20,
+        name: botName,
+        avatar: botName === 'Cazzullo' ? '🦉' : '🚀',
+        score: Math.floor(Math.random() * 40) + 10,
         streak: 1,
         isSimulated: true
       };
+    } else {
+      for (let i = 0; i < count; i++) {
+        const id = `bot-${Date.now()}-${i}`;
+        const name = names[i % names.length];
+        const avatar = avatars[i % avatars.length];
+        newBots[id] = {
+          id,
+          name,
+          avatar,
+          score: Math.floor(Math.random() * 80) + 20,
+          streak: 1,
+          isSimulated: true
+        };
+      }
     }
 
     setRoomState((prev) => {

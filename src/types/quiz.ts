@@ -174,4 +174,5 @@ export interface RoomState {
   turnStartTime: number;
   turnDuration: number;
   settings: RoomSettings;
+  resetEpoch?: number;
 }

@@ -14,7 +14,11 @@ export const OrderCellsPlayer: React.FC<OrderCellsPlayerProps> = ({
   disabled = false
 }) => {
   const [items, setItems] = useState<{ id: string; text: string; image?: string }[]>(() => {
-    return [...content.correctOrder].sort(() => Math.random() - 0.5);
+    return [...content.correctOrder].sort((a, b) => {
+      const codeA = (a.id.charCodeAt(0) * 13 + a.text.length * 7) % 29;
+      const codeB = (b.id.charCodeAt(0) * 13 + b.text.length * 7) % 29;
+      return codeA - codeB || a.id.localeCompare(b.id);
+    });
   });
   const [submitted, setSubmitted] = useState(false);
 

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { FillBlanksContent } from '../../types/quiz';
-import { CheckCircle2 } from 'lucide-react';
+import { FillBlanksContent, BlankItem } from '../../types/quiz';
+import { CheckCircle2, ChevronDown, Sparkles } from 'lucide-react';
 
 interface FillBlanksPlayerProps {
   content: FillBlanksContent;
@@ -16,92 +16,122 @@ export const FillBlanksPlayer: React.FC<FillBlanksPlayerProps> = ({
   disabled = false
 }) => {
   // Normalize blanks: support either content.blanks array or single blankWord
-  const blanksList = useMemo(() => {
+  const blanksList: BlankItem[] = useMemo(() => {
     if (content.blanks && content.blanks.length > 0) {
       return content.blanks;
     }
+    const singleWord = content.blankWord || '';
     return [
       {
         id: 'blank-1',
-        correctWord: content.blankWord || '',
-        distractors: content.distractors || []
+        correctWord: singleWord,
+        distractors: content.distractors || ['OPZIONE 1', 'OPZIONE 2', 'OPZIONE 3']
       }
     ];
-  }, [content]);
+  }, [content.blankWord, content.distractors, content.blanks]);
 
   // Selected word for each blank id
   const [selectedWords, setSelectedWords] = useState<Record<string, string>>({});
-  const [activeBlankId, setActiveBlankId] = useState<string>(blanksList[0]?.id || 'blank-1');
   const [submitted, setSubmitted] = useState(false);
 
-  const currentBlank = blanksList.find((b) => b.id === activeBlankId) || blanksList[0];
+  // Pre-generate deterministic shuffled choices for each blank
+  const blankOptionsMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    blanksList.forEach((b) => {
+      const allChoices = Array.from(
+        new Set([b.correctWord.trim().toUpperCase(), ...(b.distractors || []).map((d) => d.trim().toUpperCase())])
+      );
+      // Deterministic sort based on character codes to avoid jitter on re-render
+      map[b.id] = [...allChoices].sort((a, b) => a.localeCompare(b));
+    });
+    return map;
+  }, [blanksList]);
 
-  const shuffledChoices = useMemo(() => {
-    if (!currentBlank) return [];
-    const list = [currentBlank.correctWord, ...(currentBlank.distractors || [])];
-    return [...list].sort(() => Math.random() - 0.5);
-  }, [currentBlank]);
-
-  const handleSelectWord = (word: string) => {
+  const handleSelectChange = (blankId: string, val: string) => {
     if (disabled || submitted) return;
     setSelectedWords((prev) => ({
       ...prev,
-      [activeBlankId]: word
+      [blankId]: val
     }));
-
-    // Automatically advance to next unfilled blank if any
-    const nextUnfilled = blanksList.find((b) => !selectedWords[b.id] && b.id !== activeBlankId);
-    if (nextUnfilled) {
-      setActiveBlankId(nextUnfilled.id);
-    }
   };
 
-  const isComplete = blanksList.every((b) => selectedWords[b.id] && selectedWords[b.id].trim() !== '');
+  const filledCount = blanksList.filter(
+    (b) => selectedWords[b.id] && selectedWords[b.id].trim() !== ''
+  ).length;
+
+  const isComplete = blanksList.length > 0 && filledCount === blanksList.length;
 
   const handleConfirm = () => {
     if (disabled || submitted || !isComplete) return;
     setSubmitted(true);
 
-    const isAllCorrect = blanksList.every(
-      (b) =>
-        (selectedWords[b.id] || '').trim().toLowerCase() === b.correctWord.trim().toLowerCase()
-    );
+    const isAllCorrect = blanksList.every((b) => {
+      const chosen = (selectedWords[b.id] || '').trim().toUpperCase();
+      const expected = b.correctWord.trim().toUpperCase();
+      return chosen === expected;
+    });
 
-    onAnswer(isAllCorrect, { selectedWords });
+    onAnswer(isAllCorrect, { selectedWords, blanksList });
   };
 
-  // Split text by placeholders or render text with interactive blank slots
-  const renderSentenceWithBlanks = () => {
-    // If originalText contains [...] or similar, split by them
-    const segments = content.originalText.split(/\[\.\.\.\]|\{\{|\}\}/g);
+  // Render text with inline vertical dropdown menus for blanks
+  const renderSentenceWithDropdowns = () => {
+    const rawTokens = (content.originalText || '').split(' ');
+    // Keep track of which blank index we're matching
+    let blankPointer = 0;
 
     return (
-      <div className="flex flex-wrap items-center justify-center gap-2 text-xl md:text-2xl font-semibold text-slate-100 leading-relaxed">
-        {segments.map((seg, idx) => {
-          const blankItem = blanksList[idx];
-          const chosen = blankItem ? selectedWords[blankItem.id] : null;
-          const isActive = blankItem?.id === activeBlankId;
+      <div className="flex flex-wrap items-center justify-center gap-2.5 text-lg md:text-xl font-semibold text-slate-100 leading-relaxed">
+        {rawTokens.map((token, idx) => {
+          const cleanToken = token.replace(/[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]/g, '').toUpperCase();
+          const targetBlank = blanksList[blankPointer];
+
+          const isThisABlank =
+            targetBlank &&
+            cleanToken === targetBlank.correctWord.trim().toUpperCase();
+
+          if (isThisABlank) {
+            blankPointer++;
+            const blankId = targetBlank.id;
+            const chosenVal = selectedWords[blankId] || '';
+            const options = blankOptionsMap[blankId] || [targetBlank.correctWord];
+
+            return (
+              <span key={`token-${idx}-${blankId}`} className="inline-flex items-center mx-1 my-1">
+                <div className="relative inline-block">
+                  <select
+                    disabled={disabled || submitted}
+                    value={chosenVal}
+                    onChange={(e) => handleSelectChange(blankId, e.target.value)}
+                    className={`appearance-none font-bold text-sm md:text-base py-2 pl-3 pr-8 rounded-xl border-2 shadow-lg transition-all cursor-pointer focus:outline-none focus:ring-2 ${
+                      chosenVal
+                        ? 'bg-amber-400 text-slate-950 border-amber-300 ring-amber-400/50 font-black'
+                        : 'bg-slate-900 text-amber-300 border-amber-400/80 hover:border-amber-300 animate-pulse'
+                    }`}
+                  >
+                    <option value="" disabled className="bg-slate-900 text-slate-400">
+                      ▼ Scegli parola ({blankPointer})
+                    </option>
+                    {options.map((opt, optIdx) => (
+                      <option
+                        key={optIdx}
+                        value={opt}
+                        className="bg-slate-900 text-white font-bold py-1.5"
+                      >
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-900 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </span>
+            );
+          }
 
           return (
-            <React.Fragment key={idx}>
-              <span>{seg}</span>
-              {blankItem && (
-                <button
-                  type="button"
-                  disabled={disabled || submitted}
-                  onClick={() => setActiveBlankId(blankItem.id)}
-                  className={`px-4 py-2 rounded-xl border-2 font-black transition-all cursor-pointer shadow-inner mx-1 ${
-                    isActive
-                      ? 'border-amber-400 bg-amber-500/30 text-amber-300 ring-4 ring-amber-400/40 scale-105'
-                      : chosen
-                      ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
-                      : 'border-dashed border-slate-500 bg-slate-900 text-slate-400 hover:border-amber-400'
-                  }`}
-                >
-                  {chosen || `[ Buco ${idx + 1} ]`}
-                </button>
-              )}
-            </React.Fragment>
+            <span key={`token-${idx}`} className="text-slate-200">
+              {token}
+            </span>
           );
         })}
       </div>
@@ -109,60 +139,47 @@ export const FillBlanksPlayer: React.FC<FillBlanksPlayerProps> = ({
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto flex flex-col gap-6">
+    <div className="w-full max-w-3xl mx-auto flex flex-col gap-6">
       {imageUrl && (
         <div className="w-full max-h-60 rounded-2xl overflow-hidden border border-slate-700 shadow-xl bg-slate-950 flex items-center justify-center">
-          <img src={imageUrl} alt="Immagine di supporto" className="max-h-60 w-auto object-contain" />
+          <img src={imageUrl} alt="Supporto visivo" className="max-h-60 w-auto object-contain" />
         </div>
       )}
 
-      {/* Interactive Sentence Card */}
-      <div className="p-8 rounded-3xl bg-slate-800/90 border-2 border-indigo-500/40 shadow-2xl text-center">
-        <p className="text-xs uppercase font-extrabold tracking-widest text-indigo-300 mb-4">
-          Completa i buchi scegliendo le parole corrette:
-        </p>
-        {renderSentenceWithBlanks()}
+      {/* Main Sentence Card with Vertical Dropdown Menus */}
+      <div className="p-6 md:p-8 rounded-3xl bg-slate-800/95 border-2 border-indigo-500/50 shadow-2xl space-y-5">
+        <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
+          <span className="text-xs uppercase font-extrabold tracking-widest text-indigo-300 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            Testo a buchi • Seleziona dai menu a discesa
+          </span>
+          <span className="text-xs font-black text-amber-300 bg-amber-400/20 px-2.5 py-1 rounded-full border border-amber-400/30">
+            {filledCount} di {blanksList.length} completati
+          </span>
+        </div>
+
+        <div className="py-2">
+          {renderSentenceWithDropdowns()}
+        </div>
       </div>
 
-      {/* Choice Chips for Active Blank */}
-      {currentBlank && (
-        <div className="space-y-3 bg-slate-900 border border-slate-800 p-5 rounded-3xl shadow-xl">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-400 px-1">
-            <span>Scegli per: <strong className="text-amber-300">Buco ({blanksList.findIndex(b => b.id === currentBlank.id) + 1})</strong></span>
-            <span className="text-emerald-400">{Object.keys(selectedWords).length} di {blanksList.length} completati</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            {shuffledChoices.map((choice, idx) => {
-              const isSelected = selectedWords[currentBlank.id] === choice;
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  disabled={disabled || submitted}
-                  onClick={() => handleSelectWord(choice)}
-                  className={`p-3.5 rounded-2xl font-bold text-base md:text-lg transition-all shadow-md text-center cursor-pointer ${
-                    isSelected
-                      ? 'bg-amber-500 text-slate-950 ring-4 ring-amber-300 font-black scale-102'
-                      : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
-                  }`}
-                >
-                  {choice}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
+      {/* Confirmation Submit Button */}
       <button
         type="button"
         disabled={disabled || submitted || !isComplete}
         onClick={handleConfirm}
-        className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-40 text-white shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-98 cursor-pointer"
+        className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl flex items-center justify-center gap-3 transition-all ${
+          isComplete && !submitted && !disabled
+            ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white cursor-pointer active:scale-98 ring-2 ring-emerald-400/50 animate-pulse'
+            : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
+        }`}
       >
         <CheckCircle2 className="w-6 h-6" />
-        {submitted ? 'Risposte Registrate' : 'Conferma Tutte le Risposte'}
+        {submitted
+          ? 'Risposte Inviate!'
+          : isComplete
+          ? 'Conferma Tutte le Parole 🚀'
+          : `Completa tutti i menu a discesa (${filledCount}/${blanksList.length})`}
       </button>
     </div>
   );

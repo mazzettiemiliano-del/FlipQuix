@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { PuzzleContent } from '../../types/quiz';
 import { RotateCcw, CheckCircle2 } from 'lucide-react';
 
@@ -9,7 +9,7 @@ interface PuzzlePlayerProps {
 }
 
 interface TileItem {
-  id: number; // 0 to (gridSize*gridSize - 1)
+  id: number;
   originalPos: number;
 }
 
@@ -18,10 +18,42 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
   onAnswer,
   disabled = false
 }) => {
-  const size = content.gridSize || 2; // 2x2 = 4 tiles, or 3x3 = 9 tiles
+  const size = content.gridSize || 2; // 2x2 or 3x3
   const totalTiles = size * size;
 
+  const initialBank = useMemo(() => {
+    const list: TileItem[] = Array.from({ length: totalTiles }, (_, i) => ({
+      id: i,
+      originalPos: i
+    }));
+    // Stable pseudo-shuffle based on tile index so all clients have identical initial order
+    return [...list].sort((a, b) => {
+      const codeA = (a.id * 17 + size * 13) % totalTiles;
+      const codeB = (b.id * 17 + size * 13) % totalTiles;
+      return codeA - codeB || a.id - b.id;
+    });
+  }, [totalTiles, size]);
+
+  const [bank, setBank] = useState<TileItem[]>(initialBank);
+  const [placedSlots, setPlacedSlots] = useState<(TileItem | null)[]>(
+    () => Array(totalTiles).fill(null)
+  );
+  const [selectedBankTile, setSelectedBankTile] = useState<TileItem | null>(null);
   const [draggedTile, setDraggedTile] = useState<TileItem | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  const getTileStyle = (originalPos: number): React.CSSProperties => {
+    const row = Math.floor(originalPos / size);
+    const col = originalPos % size;
+    const xPercent = (col / (size - 1 || 1)) * 100;
+    const yPercent = (row / (size - 1 || 1)) * 100;
+
+    return {
+      backgroundImage: `url(${content.imageUrl})`,
+      backgroundSize: `${size * 100}% ${size * 100}%`,
+      backgroundPosition: `${xPercent}% ${yPercent}%`
+    };
+  };
 
   const handleDragStart = (e: React.DragEvent, tile: TileItem) => {
     if (disabled || submitted) return;
@@ -33,13 +65,11 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
     e.preventDefault();
     if (disabled || submitted || !draggedTile) return;
 
-    // Place dragged tile into slot
     const nextSlots = [...placedSlots];
     const prevTileInSlot = nextSlots[index];
     nextSlots[index] = draggedTile;
     setPlacedSlots(nextSlots);
 
-    // Remove from bank and return previous tile if any
     setBank((prev) => {
       const filtered = prev.filter((t) => t.id !== draggedTile.id);
       return prevTileInSlot ? [...filtered, prevTileInSlot] : filtered;
@@ -49,6 +79,69 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+  };
+
+  // Mobile / Click-to-place support
+  const handleBankTileClick = (tile: TileItem) => {
+    if (disabled || submitted) return;
+    if (selectedBankTile?.id === tile.id) {
+      setSelectedBankTile(null);
+      return;
+    }
+    // If a slot is empty, place directly into first empty slot
+    const firstEmptyIndex = placedSlots.findIndex((s) => s === null);
+    if (firstEmptyIndex !== -1) {
+      const nextSlots = [...placedSlots];
+      nextSlots[firstEmptyIndex] = tile;
+      setPlacedSlots(nextSlots);
+      setBank((prev) => prev.filter((t) => t.id !== tile.id));
+      setSelectedBankTile(null);
+    } else {
+      setSelectedBankTile(tile);
+    }
+  };
+
+  const handleSlotClick = (index: number) => {
+    if (disabled || submitted) return;
+    const currentInSlot = placedSlots[index];
+
+    if (selectedBankTile) {
+      // Place selected bank tile into this slot
+      const nextSlots = [...placedSlots];
+      nextSlots[index] = selectedBankTile;
+      setPlacedSlots(nextSlots);
+      setBank((prev) => {
+        const filtered = prev.filter((t) => t.id !== selectedBankTile.id);
+        return currentInSlot ? [...filtered, currentInSlot] : filtered;
+      });
+      setSelectedBankTile(null);
+    } else if (currentInSlot) {
+      // Return tile from slot back to bank
+      const nextSlots = [...placedSlots];
+      nextSlots[index] = null;
+      setPlacedSlots(nextSlots);
+      setBank((prev) => [...prev, currentInSlot]);
+    }
+  };
+
+  const handleReset = () => {
+    if (disabled || submitted) return;
+    setBank(initialBank);
+    setPlacedSlots(Array(totalTiles).fill(null));
+    setSelectedBankTile(null);
+  };
+
+  const handleConfirm = () => {
+    if (disabled || submitted || placedSlots.some((s) => s === null)) return;
+    setSubmitted(true);
+
+    const isCorrect = placedSlots.every(
+      (tile, idx) => tile !== null && tile.originalPos === idx
+    );
+
+    onAnswer(isCorrect, {
+      placedOrder: placedSlots.map((t) => t?.originalPos)
+    });
   };
 
   return (
@@ -73,19 +166,24 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
               gridTemplateRows: `repeat(${size}, minmax(0, 1fr))`
             }}
           >
-            {bank.map((tile) => (
-              <div
-                key={tile.id}
-                draggable={!disabled && !submitted}
-                onDragStart={(e) => handleDragStart(e, tile)}
-                onClick={() => handleBankTileClick(tile)}
-                className="w-full h-full rounded-xl border border-white/20 shadow-md overflow-hidden hover:scale-105 active:scale-95 transition-transform cursor-grab active:cursor-grabbing relative"
-                style={getTileStyle(tile.originalPos)}
-              />
-            ))}
+            {bank.map((tile) => {
+              const isSelected = selectedBankTile?.id === tile.id;
+              return (
+                <div
+                  key={tile.id}
+                  draggable={!disabled && !submitted}
+                  onDragStart={(e) => handleDragStart(e, tile)}
+                  onClick={() => handleBankTileClick(tile)}
+                  className={`w-full h-full rounded-xl border shadow-md overflow-hidden hover:scale-105 active:scale-95 transition-transform cursor-grab active:cursor-grabbing relative ${
+                    isSelected ? 'ring-4 ring-amber-400 border-amber-300' : 'border-white/20'
+                  }`}
+                  style={getTileStyle(tile.originalPos)}
+                />
+              );
+            })}
             {bank.length === 0 && (
               <div className="col-span-full row-span-full flex items-center justify-center text-xs text-emerald-400 font-semibold">
-                Tutte le tessere inserite!
+                Tutte le tessere posizionate!
               </div>
             )}
           </div>
@@ -101,7 +199,7 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
               type="button"
               disabled={disabled || submitted}
               onClick={handleReset}
-              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
+              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
             >
               <RotateCcw className="w-3 h-3" />
               Svuota
@@ -137,7 +235,7 @@ export const PuzzlePlayer: React.FC<PuzzlePlayerProps> = ({
         type="button"
         disabled={disabled || submitted || placedSlots.some((s) => s === null)}
         onClick={handleConfirm}
-        className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-40 text-white shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-98"
+        className="w-full py-4 rounded-2xl font-black text-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-40 text-white shadow-xl flex items-center justify-center gap-3 transition-transform active:scale-98 cursor-pointer"
       >
         <CheckCircle2 className="w-6 h-6" />
         {submitted ? 'Puzzle Inviato' : 'Conferma Ricostruzione'}

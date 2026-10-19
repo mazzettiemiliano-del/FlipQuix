@@ -17,6 +17,7 @@ import {
   WordBuilderContent
 } from '../types/quiz';
 import { ImagePickerModal } from './ImagePickerModal';
+import { generateMathProblems } from '../utils/mathGenerator';
 import {
   HelpCircle,
   Clock,
@@ -169,10 +170,11 @@ export const QuestionCreator: React.FC<QuestionCreatorProps> = ({
   // Open Short
   const [openAnswers, setOpenAnswers] = useState<string>('');
 
-  // Fill Blanks
+  // Fill Blanks - support multiple custom blanks with distractors
   const [fillSentence, setFillSentence] = useState('MARIO VA AL MARE IN VACANZA');
-  const [highlightedWord, setHighlightedWord] = useState('MARE');
-  const [distractors, setDistractors] = useState<string[]>(['MONTAGNA', 'LAGO', 'COLLINA']);
+  const [blankItems, setBlankItems] = useState<{ id: string; correctWord: string; distractors: string[] }[]>([
+    { id: 'b-0', correctWord: 'MARE', distractors: ['MONTAGNA', 'LAGO', 'COLLINA'] }
+  ]);
 
   // Memory Match (4 pairs)
   const [memoryPairs, setMemoryPairs] = useState<{ id: string; image: string; text: string }[]>([
@@ -274,10 +276,14 @@ export const QuestionCreator: React.FC<QuestionCreatorProps> = ({
       }
       content = { acceptedAnswers: answers } as OpenShortContent;
     } else if (selectedType === 'fill_blanks') {
+      const blanks = blankItems.length > 0 ? blankItems : [
+        { id: 'b-0', correctWord: 'MARE', distractors: ['MONTAGNA', 'LAGO', 'COLLINA'] }
+      ];
       content = {
         originalText: fillSentence,
-        blankWord: highlightedWord,
-        distractors
+        blankWord: blanks[0]?.correctWord || '',
+        distractors: blanks[0]?.distractors || [],
+        blanks: blanks
       } as FillBlanksContent;
     } else if (selectedType === 'memory_match') {
       content = { pairs: memoryPairs } as MemoryMatchContent;
@@ -298,11 +304,13 @@ export const QuestionCreator: React.FC<QuestionCreatorProps> = ({
         .filter(Boolean);
       content = { words, gridSize: 8 } as WordSearchContent;
     } else if (selectedType === 'math_challenge') {
+      const generatedProblems = generateMathProblems(mathOps, mathCount, mathRange, mathCarry);
       content = {
         operators: mathOps,
         numberOfOperations: mathCount,
         digitRange: mathRange,
-        allowCarryOrRemainder: mathCarry
+        allowCarryOrRemainder: mathCarry,
+        generatedProblems
       } as MathChallengeContent;
     } else if (selectedType === 'word_builder') {
       content = {
@@ -615,9 +623,9 @@ export const QuestionCreator: React.FC<QuestionCreatorProps> = ({
 
           {/* Type 4: Fill Blanks */}
           {selectedType === 'fill_blanks' && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <span className="text-xs font-bold text-slate-400 block mb-1">
+                <span className="text-xs font-bold text-slate-300 block mb-1">
                   1. Scrivi la frase completa:
                 </span>
                 <input
@@ -625,59 +633,102 @@ export const QuestionCreator: React.FC<QuestionCreatorProps> = ({
                   value={fillSentence}
                   onChange={(e) => setFillSentence(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white"
+                  placeholder="Es. Roma è la capitale d'Italia e il Colosseo è famoso nel mondo"
                 />
               </div>
 
               <div>
-                <span className="text-xs font-bold text-slate-400 block mb-1">
-                  2. Clicca sulla parola da evidenziare in GIALLO (diventerà il buco):
-                </span>
-                <div className="flex flex-wrap gap-2 p-3 bg-slate-900 rounded-xl border border-slate-800">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-slate-300 block">
+                    2. Clicca sulle parole da "bucare" (puoi bucare più parole!):
+                  </span>
+                  <span className="text-xs font-bold text-amber-300">
+                    {blankItems.length} {blankItems.length === 1 ? 'parola bucata' : 'parole bucate'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2 p-3 bg-slate-900 rounded-2xl border border-slate-800">
                   {fillSentence.split(' ').map((w, idx) => {
-                    const clean = w.replace(/[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]/g, '');
-                    const isSelected = highlightedWord.toLowerCase() === clean.toLowerCase();
+                    const clean = w.replace(/[^a-zA-Z0-9àèéìòùÀÈÉÌÒÙ]/g, '').toUpperCase();
+                    if (!clean) return null;
+                    const isBlank = blankItems.some((b) => b.correctWord.toUpperCase() === clean);
                     return (
                       <button
                         key={idx}
                         type="button"
-                        onClick={() => setHighlightedWord(clean)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                          isSelected
-                            ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 font-black scale-105'
+                        onClick={() => {
+                          if (isBlank) {
+                            if (blankItems.length > 1) {
+                              setBlankItems(blankItems.filter((b) => b.correctWord.toUpperCase() !== clean));
+                            }
+                          } else {
+                            setBlankItems([
+                              ...blankItems,
+                              {
+                                id: `b-${Date.now()}-${idx}`,
+                                correctWord: clean,
+                                distractors: ['Distrattore 1', 'Distrattore 2', 'Distrattore 3']
+                              }
+                            ]);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer ${
+                          isBlank
+                            ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 font-black shadow-md scale-105'
                             : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                         }`}
                       >
-                        {w}
+                        {clean} {isBlank ? '✓' : ''}
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-amber-300 mt-1">
-                  Parola bucata selezionata: <strong>{highlightedWord}</strong>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Tocca una o più parole per trasformarle in buchi da completare con menu a tendina.
                 </p>
               </div>
 
-              <div>
-                <span className="text-xs font-bold text-slate-400 block mb-1">
-                  3. Inserisci 3 parole errate (distrattori che ingannano nel menu):
+              {/* Distractors for each blank item */}
+              <div className="space-y-3">
+                <span className="text-xs font-bold text-slate-300 block">
+                  3. Definisci i distrattori per ciascun buco (appariranno nel menu a discesa):
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {distractors.map((dis, idx) => (
-                    <input
-                      key={idx}
-                      type="text"
-                      required
-                      value={dis}
-                      onChange={(e) => {
-                        const next = [...distractors];
-                        next[idx] = e.target.value;
-                        setDistractors(next);
-                      }}
-                      placeholder={`Distrattore ${idx + 1}`}
-                      className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
-                    />
-                  ))}
-                </div>
+                {blankItems.map((blank, bIdx) => (
+                  <div key={blank.id} className="p-3.5 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-300">
+                        Buco #{bIdx + 1}: <strong className="text-white uppercase font-mono px-2 py-0.5 bg-slate-800 rounded-lg">{blank.correctWord}</strong> (Risposta corretta)
+                      </span>
+                      {blankItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setBlankItems(blankItems.filter((b) => b.id !== blank.id))}
+                          className="text-[11px] text-rose-400 hover:underline cursor-pointer"
+                        >
+                          Rimuovi buco
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {blank.distractors.map((dis, dIdx) => (
+                        <input
+                          key={dIdx}
+                          type="text"
+                          required
+                          value={dis}
+                          onChange={(e) => {
+                            const updated = [...blankItems];
+                            const curDis = [...updated[bIdx].distractors];
+                            curDis[dIdx] = e.target.value;
+                            updated[bIdx] = { ...updated[bIdx], distractors: curDis };
+                            setBlankItems(updated);
+                          }}
+                          placeholder={`Distrattore ${dIdx + 1}`}
+                          className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

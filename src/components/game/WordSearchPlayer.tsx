@@ -20,9 +20,10 @@ export const WordSearchPlayer: React.FC<WordSearchPlayerProps> = ({
   disabled = false
 }) => {
   const gridSize = content.gridSize || 8;
+  const wordsKey = (content.words || []).join(',');
   const wordsToFind = useMemo(
-    () => content.words.map((w) => w.trim().toUpperCase()),
-    [content]
+    () => (content.words || []).map((w) => w.trim().toUpperCase()),
+    [wordsKey]
   );
 
   const [grid, setGrid] = useState<string[][]>(() => {

@@ -97,13 +97,9 @@ export function sanitizeRoomState(data: any, fallback?: RoomState): RoomState {
     ? data.questions
     : (data.questions && typeof data.questions === 'object' ? Object.values(data.questions) : null);
 
-  const fallbackQuestions = fallback?.questions && fallback.questions.length > 0
-    ? fallback.questions
-    : INITIAL_QUESTIONS;
-
-  const questions = rawQuestions && rawQuestions.length > 0
+  const questions: Question[] = rawQuestions !== null
     ? (rawQuestions as Question[])
-    : fallbackQuestions;
+    : (fallback?.questions || []);
 
   const curIndex = typeof data.currentQuestionIndex === 'number' && data.currentQuestionIndex >= 0
     ? Math.min(data.currentQuestionIndex, Math.max(0, (questions.length || 1) - 1))
@@ -135,6 +131,7 @@ export function sanitizeRoomState(data: any, fallback?: RoomState): RoomState {
     drawingsThisTurn: normalizedDrawings,
     turnStartTime: typeof data.turnStartTime === 'number' ? data.turnStartTime : 0,
     turnDuration: typeof data.turnDuration === 'number' ? data.turnDuration : 25,
+    resetEpoch: typeof data.resetEpoch === 'number' ? data.resetEpoch : fallback?.resetEpoch,
     settings: {
       basePoints: data.settings?.basePoints ?? fallback?.settings?.basePoints ?? 50,
       fastFingerBonus1: data.settings?.fastFingerBonus1 ?? fallback?.settings?.fastFingerBonus1 ?? 20,
@@ -173,11 +170,6 @@ export const firebaseSync = {
         if (data && data.phase) {
           notifyConnectionChange(true);
           const sanitized = sanitizeRoomState(data, defaultState);
-          // If questions were missing in existing DB room, repair it in Firebase
-          if (!data.questions || (Array.isArray(data.questions) && data.questions.length === 0)) {
-            const questionsRef = ref(rtdb, `rooms/${cleanCode}/questions`);
-            set(questionsRef, cleanPayload(sanitized.questions)).catch(() => {});
-          }
           return sanitized;
         }
       }

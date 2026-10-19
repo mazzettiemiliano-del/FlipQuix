@@ -360,7 +360,7 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
           <QuestionRenderer
             question={currentQ}
             onAnswer={onSubmitAnswer}
-            disabled={currentQ.type === 'draw_vote' ? false : myAnswer !== null}
+            disabled={currentQ.type === 'draw_vote' || currentQ.type === 'word_builder' ? false : myAnswer !== null}
             myPlayerId={activePlayer.id}
             drawings={roomState.drawingsThisTurn || {}}
             isGalleryMode={false}
@@ -379,6 +379,16 @@ export const StudentDevice: React.FC<StudentDeviceProps> = ({
                 Disegna sul riquadro qui sopra. Il disegno viene salvato automaticamente! ⭐
               </div>
             )
+          ) : currentQ.type === 'word_builder' ? (
+            <div className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-center text-xs text-slate-300">
+              {myAnswer && myAnswer.answerPayload?.count > 0 ? (
+                <span className="text-emerald-300 font-bold">
+                  Parole trovate: {myAnswer.answerPayload.count} (+{myAnswer.pointsAwarded} pt)! Continua a formare altre parole prima dello scadere del tempo!
+                </span>
+              ) : (
+                'Componi quante più parole possibili (anche articoli, preposizioni, pronomi, verbi) prima dello scadere del tempo!'
+              )}
+            </div>
           ) : myAnswer ? (
             <div className="p-4 bg-emerald-500/20 border-2 border-emerald-500/60 rounded-2xl text-center text-sm font-black text-emerald-300 flex items-center justify-center gap-2 animate-bounce shadow-xl">
               <CheckCircle className="w-5 h-5 text-emerald-400 stroke-[3]" />
